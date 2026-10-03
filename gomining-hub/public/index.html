@@ -68,6 +68,17 @@
         <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
         <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
         <label class="field"><span>Total maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="field"><span>BTC price</span>
+          <select name="btcScenario">
+            <option value="current">Current</option>
+            <option value="100000">$100,000</option>
+            <option value="200000">$200,000</option>
+            <option value="300000">$300,000</option>
+            <option value="500000">$500,000</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </label>
+        <label class="field" data-btc-custom hidden><span>Custom BTC price (USD)</span><input name="btcPriceCustom" type="number" min="1" step="any" placeholder="e.g. 150000" inputmode="decimal"></label>
         <label class="field"><span>Electricity ($/kWh, optional)</span><input name="kwhPriceUsd" type="number" min="0" step="any" placeholder="GoMining rate" inputmode="decimal"></label>
         <label class="field" data-only="rewards"><span>Price paid (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
         <label class="field" data-only="plan"><span>Monthly budget (USD)</span><input name="monthlyUsd" type="number" min="0" step="any" value="100" inputmode="decimal"></label>
@@ -86,6 +97,7 @@
           <li><strong>Price per TH, new purchases</strong> defaults to GoMining's listed price for new miners (primary market, not the secondary marketplace).</li>
           <li><strong>Reinvesting</strong> into an existing miner is priced as a power upgrade, not as a new miner. Enter the power-upgrade price per TH your app shows, and any reinvest bonus (for example a VIP +5% or +10%). GoMining's reinvestment eligibility rules and minimums aren't checked here.</li>
           <li><strong>365-day average</strong> is GoMining's total gross payout per TH over the last year divided by 365, which smooths out daily swings.</li>
+          <li><strong>BTC price</strong> scenarios keep your sats per TH the same (set by network difficulty, not price) and value them at the chosen price; electricity and service fees stay in USD. Difficulty is held constant, although in reality it tends to rise when BTC does.</li>
           <li>Miner Wars rewards aren't included anywhere in these calculators.</li>
         </ul>
       </details>

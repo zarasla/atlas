@@ -1,5 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
-import { findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
+import { atBtcPrice, findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -450,6 +450,8 @@ function formValues() {
     reinvestPricePerThUsd: n('reinvestPricePerThUsd'),
     reinvestBonusPct: n('reinvestBonusPct') ?? 0,
     kwhPriceUsd: n('kwhPriceUsd'),
+    // A BTC price scenario, or undefined for the current price.
+    btcPriceUsd: f.btcScenario.value === 'custom' ? n('btcPriceCustom') : f.btcScenario.value === 'current' ? undefined : Number(f.btcScenario.value),
     reinvest: f.reinvest.checked,
     useAverageReward: f.average.checked,
   };
@@ -473,8 +475,13 @@ function renderCalculator() {
   // Show the rate an empty electricity box falls back to.
   $('gc-form').elements.kwhPriceUsd.placeholder = `GoMining rate: ${usd(state.market.income.electricityKwhPriceUsd, 3)}`;
   const v = formValues();
-  const income = state.market.income;
-  const gmt = state.market.prices?.gomining?.usd;
+  $('gc-form').querySelector('[data-btc-custom]').hidden = $('gc-form').elements.btcScenario.value !== 'custom';
+  // Everything below runs on the chosen BTC price; sats per TH and USD fees stay as they are.
+  const income = atBtcPrice(state.market.income, v.btcPriceUsd);
+  const scenario = income !== state.market.income;
+  const scenarioNote = scenario ? ` BTC price scenario ${usd(income.btcPriceUsd, 0)} (current ${usd(state.market.income.btcPriceUsd, 0)}), difficulty held constant.` : '';
+  // The GOMINING conversion only makes sense at today's prices.
+  const gmt = scenario ? undefined : state.market.prices?.gomining?.usd;
   const basis = v.useAverageReward ? "GoMining's 365-day average payout" : "GoMining's latest daily payout";
   const sample = state.market.sources.income === 'sample' ? ' (sample data)' : '';
   try {
@@ -502,7 +509,7 @@ function renderCalculator() {
           PERIOD_LABELS[key], usdSmart(p.grossUsd), `−${usdSmart(p.electricityUsd)}`, `−${usdSmart(p.serviceUsd)}`, p.discountUsd ? `+${usdSmart(p.discountUsd)}` : '—',
           usdSmart(p.netUsd), num(p.netBtc, 8), num(p.netSats), ...(withGmt ? [num(p.netGomining, 2)] : []),
         ]));
-      $('gc-note').textContent = `${v.powerTh} TH at ${v.efficiencyWth} W/TH, ${num(r.input.discountPct, 1)}% total maintenance discount, electricity ${usd(r.input.kwhPriceUsd, 3)}/kWh, ${basis}${sample}. Rewards are paid in BTC${withGmt ? '; *GOMINING is only a conversion at today\'s market price' : ''}. Rates held constant; BTC price, difficulty and fees will move. Payback depends heavily on these assumptions.`;
+      $('gc-note').textContent = `${v.powerTh} TH at ${v.efficiencyWth} W/TH, ${num(r.input.discountPct, 1)}% total maintenance discount, electricity ${usd(r.input.kwhPriceUsd, 3)}/kWh, ${basis}${sample}. Rewards are paid in BTC${withGmt ? '; *GOMINING is only a conversion at today\'s market price' : ''}. Rates held constant; BTC price, difficulty and fees will move. Payback depends heavily on these assumptions.${scenarioNote}`;
     } else {
       const listedPerTh = listedPricePerTh(state.market.presets, v.efficiencyWth);
       const pricePerThUsd = v.pricePerThUsd ?? listedPerTh;
@@ -536,7 +543,7 @@ function renderCalculator() {
       const reinvestNote = v.reinvest
         ? ` Reinvesting at ${usd(v.reinvestPricePerThUsd || pricePerThUsd, 2)} per TH${v.reinvestPricePerThUsd ? '' : ' (same as new purchases: enter your power-upgrade price for accuracy)'}${v.reinvestBonusPct ? ` with a ${num(v.reinvestBonusPct, 1)}% bonus` : ''}; GoMining's reinvestment eligibility rules aren't checked.`
         : '';
-      $('gc-note').textContent = `New purchases at ${usd(pricePerThUsd, 2)} per TH${v.pricePerThUsd ? '' : ' (GoMining new-miner list price)'}, ${v.efficiencyWth} W/TH, ${num(v.discountPct, 1)}% total maintenance discount, ${basis}${sample}.${reinvestNote} A simulation at constant rates, not a forecast.`;
+      $('gc-note').textContent = `New purchases at ${usd(pricePerThUsd, 2)} per TH${v.pricePerThUsd ? '' : ' (GoMining new-miner list price)'}, ${v.efficiencyWth} W/TH, ${num(v.discountPct, 1)}% total maintenance discount, ${basis}${sample}.${reinvestNote} A simulation at constant rates, not a forecast.${scenarioNote}`;
     }
   } catch (error) {
     $('gc-note').textContent = error.message;
@@ -660,7 +667,7 @@ $('mm-clear').addEventListener('click', () => {
 });
 
 // ---------- Share a calculation (Discord) ----------
-const SHARE_FIELDS = ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'priceUsd', 'monthlyUsd', 'months', 'pricePerThUsd', 'reinvestPricePerThUsd', 'reinvestBonusPct'];
+const SHARE_FIELDS = ['btcPriceCustom', 'powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'priceUsd', 'monthlyUsd', 'months', 'pricePerThUsd', 'reinvestPricePerThUsd', 'reinvestBonusPct'];
 
 // Opening a shared link fills the calculator with the sender's numbers.
 function applySharedLink() {
@@ -671,6 +678,8 @@ function applySharedLink() {
     const value = hash.get(name);
     if (value !== null && /^\d+(\.\d+)?$/.test(value)) f[name].value = value;
   }
+  const scenario = hash.get('btc');
+  if (scenario && [...f.btcScenario.options].some((o) => o.value === scenario)) f.btcScenario.value = scenario;
   f.reinvest.checked = hash.get('reinvest') === '1';
   f.average.checked = hash.get('average') === '1';
   state.gcMode = hash.get('calc') === 'plan' ? 'plan' : 'rewards';
@@ -683,6 +692,8 @@ function shareLink() {
     ? ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'monthlyUsd', 'months', 'pricePerThUsd', 'reinvestPricePerThUsd', 'reinvestBonusPct']
     : ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'priceUsd'];
   for (const name of fields) if (f[name].value !== '') params.set(name, f[name].value);
+  if (f.btcScenario.value !== 'current') params.set('btc', f.btcScenario.value);
+  if (f.btcScenario.value === 'custom' && f.btcPriceCustom.value) params.set('btcPriceCustom', f.btcPriceCustom.value);
   if (state.gcMode === 'plan' && f.reinvest.checked) params.set('reinvest', '1');
   if (f.average.checked) params.set('average', '1');
   return `${location.origin}/#${params}`;

@@ -329,3 +329,17 @@ export function portfolio(market, miners, { discountPct = 0, upgrades } = {}) {
     },
   };
 }
+
+// The same market at a different BTC price ("what if BTC is $200k?"). The payout per TH in BTC is set
+// by network difficulty, not price, so it stays the same and its USD value scales with the price;
+// electricity and service fees are charged in USD and stay as they are. Difficulty is held constant.
+export function atBtcPrice(market, btcPriceUsd) {
+  if (!(btcPriceUsd > 0) || btcPriceUsd === market.btcPriceUsd) return market;
+  const scale = btcPriceUsd / market.btcPriceUsd;
+  return {
+    ...market,
+    btcPriceUsd,
+    rewardUsdPerThDay: market.rewardUsdPerThDay * scale,
+    averageRewardUsdPerThDay365: market.averageRewardUsdPerThDay365 === null ? null : market.averageRewardUsdPerThDay365 * scale,
+  };
+}

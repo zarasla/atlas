@@ -151,3 +151,18 @@ test('audit fixes: discounted upgrade savings, electricity override, reinvest pr
   assert.ok(bonus.summary.finalTh > plain.summary.finalTh);
   assert.equal(plain.summary.investedUsd, 2000);
 });
+
+test('atBtcPrice keeps sats per TH, scales USD payout, keeps USD fees', async () => {
+  const { atBtcPrice, rewardsBreakdown } = await import('../src/core/calc.js');
+  const doubled = atBtcPrice(market, 160000);
+  assert.equal(doubled.rewardUsdPerThDay, 0.08);
+  assert.equal(doubled.rewardSatsPerThDay, market.rewardSatsPerThDay);
+  assert.equal(doubled.serviceUsdPerThDay, market.serviceUsdPerThDay);
+  const now = rewardsBreakdown(market, { powerTh: 16, efficiencyWth: 15 }).periods.day;
+  const then = rewardsBreakdown(doubled, { powerTh: 16, efficiencyWth: 15 }).periods.day;
+  assert.equal(then.grossUsd, now.grossUsd * 2);
+  assert.equal(then.electricityUsd, now.electricityUsd);
+  assert.ok(then.netUsd > now.netUsd * 2, 'fixed USD fees make net grow faster than price');
+  assert.ok(then.netSats > now.netSats, 'fees cost fewer sats at a higher price');
+  assert.equal(atBtcPrice(market, undefined), market);
+});
