@@ -1,5 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
-import { atBtcPrice, findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
+import { VIP_LEVELS, atBtcPrice, findListedPrice, investmentPlan, listedPricePerTh, maintenanceDiscount, minerWarsCycle, minerWarsVsSolo, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -171,6 +171,16 @@ function renderNetwork() {
   sub.className = 'card-sub';
   sub.textContent = adj.estimatedChangePct > 0 ? 'Expected difficulty rise: slightly fewer sats per TH after it' : 'Expected difficulty drop: slightly more sats per TH after it';
   top.append(change, sub);
+  const impact = state.market.outlook?.difficulty;
+  if (impact) {
+    const line = document.createElement('p');
+    line.className = 'impact';
+    const powerTh = Number($('gc-form').elements.powerTh.value) || 0;
+    const perDay = powerTh > 0 ? ` · your ${num(powerTh, powerTh < 10 ? 1 : 0)} TH: ` : '';
+    line.append('Your payout: ', bold(`${num(impact.satsPerThNow, 1)} → ${num(impact.satsPerThAfter, 1)} sats per TH`), ` (${pct(impact.payoutChangePct)})`);
+    if (perDay) line.append(perDay, bold(`${impact.satsPerThAfter >= impact.satsPerThNow ? '+' : '−'}${num(Math.abs((impact.satsPerThAfter - impact.satsPerThNow) * powerTh), 0)} sats/day`));
+    top.appendChild(line);
+  }
   const meter = document.createElement('div');
   meter.className = 'meter';
   meter.setAttribute('role', 'meter');
@@ -376,6 +386,251 @@ function renderAdvisor() {
   ]));
 }
 
+const bold = (text) => { const b = document.createElement('b'); b.textContent = text; return b; };
+const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
+
+// ---------- Outlook ----------
+function renderOutlook() {
+  const outlook = state.market.outlook ?? {};
+  renderBreakEven(outlook.breakEven);
+  renderHalving(outlook.halving);
+  renderFearGreed(outlook.sentiment);
+}
+
+function renderBreakEven(be) {
+  const body = $('be-body');
+  if (!be?.rows?.length) { body.replaceChildren(empty('Break-even prices need GoMining payout data.')); return; }
+  const btc = be.btcPriceUsd;
+  const selected = be.rows.find((row) => row.efficiencyWth === Math.round(state.efficiency)) ?? be.rows[0];
+  const head = el('div', 'be-head');
+  const big = el('p', 'big-number', usd(selected.breakEvenBtcUsd, 0));
+  big.appendChild(el('small', '', `at ${selected.efficiencyWth} W/TH`));
+  head.appendChild(big);
+  const sub = el('p', 'card-sub');
+  const above = selected.headroomPct;
+  const word = el('span', above >= 0 ? 'good' : 'bad', `${num(Math.abs(above), 0)}% ${above >= 0 ? 'above' : 'below'}`);
+  sub.append('BTC is ', word, ` break-even (${usd(btc, 0)} now)`);
+  const scale = Math.max(btc, ...be.rows.map((row) => row.breakEvenBtcUsd)) * 1.08;
+  const list = el('div', 'be-list');
+  list.setAttribute('role', 'list');
+  for (const row of be.rows) {
+    const line = el('div', `be-row${row === selected ? ' sel' : ''}${row.breakEvenBtcUsd > btc ? ' over' : ''}`);
+    line.setAttribute('role', 'listitem');
+    const track = el('div', 'be-track');
+    const fill = el('span', 'be-fill');
+    fill.style.width = `${(row.breakEvenBtcUsd / scale) * 100}%`;
+    track.appendChild(fill);
+    line.append(el('span', 'be-w', `${row.efficiencyWth} W/TH`), track, el('span', 'be-val', usd(row.breakEvenBtcUsd, 0)));
+    list.appendChild(line);
+  }
+  const now = el('div', 'be-now');
+  now.style.left = `calc(var(--label) + 10px + (100% - var(--label) - var(--value) - 20px) * ${btc / scale})`;
+  now.appendChild(el('span', '', `BTC now ${usd(btc, 0)}`));
+  now.setAttribute('aria-hidden', 'true');
+  list.appendChild(now);
+  body.replaceChildren(head, sub, list);
+}
+
+function renderHalving(h) {
+  const body = $('hv-body');
+  if (!h) { body.replaceChildren(empty('Block height is unavailable right now (mempool.space).')); return; }
+  $('hv-sub').textContent = `Block reward halves at block ${num(h.nextHalvingHeight)}`;
+  const big = el('p', 'big-number', `~${num(h.daysLeft)} days`);
+  const meter = el('div', 'meter');
+  meter.setAttribute('role', 'meter');
+  meter.setAttribute('aria-label', 'Progress to the next halving');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', '100');
+  meter.setAttribute('aria-valuenow', String(h.progressPct));
+  const fill = el('span');
+  fill.style.width = `${h.progressPct}%`;
+  meter.appendChild(fill);
+  const mini = el('p', 'mini');
+  const est = new Date(h.estimatedDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const group = (...parts) => { const span = el('span'); span.append(...parts); return span; };
+  mini.append(group(bold(num(h.blocksLeft)), ' blocks to go'), group('est. ', bold(est)));
+  const after = el('p', 'impact');
+  after.append(`Reward ${h.subsidyBtcNow} → ${h.subsidyBtcAfter} BTC per block. At today's difficulty that's about `, bold(`${num(h.satsPerThAfter ?? 0, 1)} sats/TH`), ' a day.');
+  body.replaceChildren(big, meter, mini, after);
+}
+
+function renderFearGreed(fg) {
+  const body = $('fg-body');
+  if (!fg) { body.replaceChildren(empty('Fear & Greed is unavailable right now.')); return; }
+  const big = el('p', 'big-number', String(fg.value));
+  big.appendChild(el('small', '', fg.label));
+  const scaleBar = el('div', 'fg-scale');
+  scaleBar.setAttribute('role', 'meter');
+  scaleBar.setAttribute('aria-label', `Fear and Greed ${fg.value} of 100, ${fg.label}`);
+  scaleBar.setAttribute('aria-valuemin', '0');
+  scaleBar.setAttribute('aria-valuemax', '100');
+  scaleBar.setAttribute('aria-valuenow', String(fg.value));
+  const mark = el('span', 'fg-mark');
+  mark.style.left = `${Math.min(100, Math.max(0, fg.value))}%`;
+  scaleBar.appendChild(mark);
+  const legend = el('div', 'fg-legend');
+  legend.append(el('span', '', 'Extreme fear'), el('span', '', 'Neutral'), el('span', '', 'Extreme greed'));
+  const mini = el('p', 'mini');
+  const group = (...parts) => { const span = el('span'); span.append(...parts); return span; };
+  if (fg.yesterday !== null) mini.append(group('Yesterday ', bold(String(fg.yesterday))));
+  if (fg.lastWeek !== null) mini.append(group('Last week ', bold(String(fg.lastWeek))));
+  body.replaceChildren(big, scaleBar, legend, mini);
+}
+
+// ---------- Discount builder ----------
+function renderBuilder() {
+  const out = $('db-out');
+  if (!state.market) return;
+  const f = $('db-form').elements;
+  const v = formValues();
+  const gmt = state.market.prices?.gomining?.usd;
+  try {
+    if (!(v.powerTh > 0) || !(v.efficiencyWth > 0)) throw new Error('Enter your power and efficiency in the calculator above.');
+    if (!gmt) throw new Error('The GOMINING price is unavailable right now, so the token part can\'t be worked out.');
+    const d = maintenanceDiscount(state.market.income, {
+      powerTh: v.powerTh, efficiencyWth: v.efficiencyWth, kwhPriceUsd: v.kwhPriceUsd, gominingUsd: gmt,
+      gominingHeld: Number(f.gominingHeld.value) || 0, vipLevel: f.vipLevel.value, serviceButton: f.serviceButton.checked,
+    });
+    store.set('dbVip', f.vipLevel.value);
+    state.builtDiscount = d.totalPct;
+    state.builtBonus = d.reinvestBonusPct;
+    const total = el('span', 'db-total', `${num(d.totalPct, 1)}%`);
+    const parts = el('span');
+    parts.append('= ', bold(`${d.tokenPct}%`), ' GOMINING + ', bold(`${num(d.vipPct, 1)}%`), ' VIP + ', bold(`${d.serviceButtonPct}%`), ' Service Button');
+    const cover = el('span');
+    cover.append('Your GOMINING covers ', bold(`${num(d.coverageDays)} days`), ` of maintenance (${usdSmart(d.dailyMaintenanceUsd)}/day at ${usd(gmt, 4)} per GOMINING).`);
+    const next = el('span');
+    if (d.next) next.append('Next step (', bold(`${d.next.pct}%`), '): hold ', bold(`${num(d.next.gominingNeeded)} GOMINING`), '. Full 20%: ', bold(`${num(d.gominingForMax)} GOMINING`), '.');
+    else next.append('You have the full 20% GOMINING discount.');
+    const bonus = el('span');
+    if (d.reinvestBonusPct) bonus.append(`${d.vipLevel} also gives `, bold(`+${d.reinvestBonusPct}% TH`), ' when reinvesting (used in the Investment plan).');
+    out.replaceChildren(total, parts, cover, next, bonus);
+    $('db-apply').disabled = false;
+  } catch (error) {
+    state.builtDiscount = null;
+    out.replaceChildren(el('span', '', error.message));
+    $('db-apply').disabled = true;
+  }
+}
+
+// ---------- HONKSQUAD in Miner Wars ----------
+const btcFmt = (value) => `${num(value, value < 0.01 ? 6 : 4)} BTC`;
+const ZONE_LABEL = { promotion: 'Promotion', safe: 'Safe', relegation: 'Relegation' };
+
+async function loadMinerWars() {
+  try {
+    state.mw = await getJson('/api/minerwars');
+  } catch (error) {
+    state.mw = { status: 'unavailable', error: error.message };
+  }
+  renderMinerWars();
+  clearTimeout(state.mwTimer);
+  // The member list is built in the background on the server; look again shortly while it loads.
+  state.mwTimer = setTimeout(loadMinerWars, state.mw?.members?.status === 'loading' ? 20_000 : 5 * 60_000);
+}
+
+function renderClock() {
+  const cycle = state.mw?.cycle ?? minerWarsCycle();
+  const left = Math.max(0, new Date(cycle.end) - Date.now());
+  const d = Math.floor(left / 86_400_000);
+  const h = Math.floor((left % 86_400_000) / 3_600_000);
+  const m = Math.floor((left % 3_600_000) / 60_000);
+  $('mw-clock').replaceChildren(document.createTextNode(`Cycle ${cycle.number} ends in`), bold(`${d}d ${h}h ${m}m`));
+}
+
+function stat(label, value, meta, valueNode) {
+  const box = el('div', 'mw-stat');
+  box.append(el('p', 'tile-label', label));
+  const v = el('p', 'tile-value');
+  if (valueNode) v.append(valueNode); else v.textContent = value;
+  box.append(v, el('p', 'tile-meta', meta ?? '\u00a0'));
+  return box;
+}
+
+function renderMinerWars() {
+  renderClock();
+  const mw = state.mw;
+  const body = $('mw-body');
+  if (!mw || mw.status !== 'live') {
+    body.replaceChildren(empty(`The Miner Wars leaderboard is unavailable right now${mw?.error ? ` (${mw.error})` : ''}. It comes back by itself.`));
+    $('mw-panels').hidden = true;
+    $('mw-vs').hidden = true;
+    return;
+  }
+  const { league, clan } = mw;
+  $('mw-sub').textContent = `${league.name} league · live from GoMining's public leaderboard · updated ${time(mw.updatedAt)}`;
+  const zone = el('span', `zone ${clan.zone}`, ZONE_LABEL[clan.zone]);
+  const rank = el('span');
+  rank.append(`#${clan.position} `, zone);
+  const zoneMeta = clan.zone === 'promotion' ? `of ${league.clans} · top ${league.promotedUpTo} go up`
+    : clan.zone === 'relegation' ? `of ${league.clans} · from #${league.relegatedFrom} go down`
+    : `of ${league.clans}${league.promotedUpTo ? ` · top ${league.promotedUpTo} go up` : ''}`;
+  const stats = el('div', 'mw-stats');
+  stats.append(
+    stat('League', league.name, `${num(league.clans)} clans · ${btcFmt(league.btcFund)} prize fund`),
+    stat('Rank', null, zoneMeta, rank),
+    stat('Blocks won', num(clan.blocks), `${num(clan.blockSharePct ?? 0, 1)}% of the league's ${num(league.totalBlocks)}`),
+    stat('Clan power', `${num(clan.powerTh, 0)} TH`, `${num((clan.powerTh / league.totalPowerTh) * 100, 1)}% of the league`),
+    stat('BTC so far', btcFmt(clan.btcSoFar), `${btcFmt(league.btcPerBlock)} per block`),
+    stat('This cycle (projected)', clan.btcWeekProjected === null ? '—' : btcFmt(clan.btcWeekProjected), clan.blocksWeekProjected === null ? 'Cycle just started' : `~${num(clan.blocksWeekProjected)} blocks at this pace`),
+  );
+  body.replaceChildren(stats);
+  if (mw.warning) body.appendChild(el('p', 'fine', mw.warning));
+
+  const isUs = (row) => row.clanId === clan.clanId;
+  const clanRows = (rows) => rows.map((row) => [`#${row.position}`, row.name || 'Unnamed clan', num(row.blocks), num(row.powerTh, 0), ZONE_LABEL[row.zone]]);
+  table($('mw-neighbours'), ['Rank', 'Clan', 'Blocks', 'TH', 'Zone'], clanRows(mw.neighbours), { highlight: (i) => isUs(mw.neighbours[i]), text: [1, 4] });
+  table($('mw-board-table'), ['Rank', 'Clan', 'Blocks', 'TH', 'Zone'], clanRows(mw.board), { highlight: (i) => isUs(mw.board[i]), text: [1, 4] });
+
+  const members = mw.members;
+  if (members.status === 'live' && members.rows.length) {
+    $('mw-members-note').textContent = `${members.count} in this league · updated ${time(members.updatedAt)}`;
+    table($('mw-members'), ['#', 'Member', 'Blocks', 'TH', 'Boosts', 'League rank'],
+      members.rows.map((row, i) => [i + 1, row.alias, num(row.blocks), num(row.powerTh, row.powerTh < 10 ? 1 : 0), num(row.boostsUsed), `#${num(row.leaguePosition)}`]), { text: [1] });
+  } else {
+    $('mw-members-note').textContent = '';
+    $('mw-members').replaceChildren(empty(members.status === 'loading' ? 'Building the member list from the league board… (about a minute)' : `Member list unavailable right now${members.error ? ` (${members.error})` : ''}.`));
+  }
+  $('mw-panels').hidden = false;
+
+  const select = $('vs-form').elements.member;
+  const chosen = select.value;
+  select.replaceChildren(new Option('Choose…', ''), ...(members.rows ?? []).map((row) => new Option(`${row.alias} · ${num(row.powerTh, 1)} TH`, String(row.powerTh))));
+  if ([...select.options].some((o) => o.value === chosen)) select.value = chosen;
+  $('mw-vs').hidden = false;
+  renderVs();
+}
+
+function renderVs() {
+  const mw = state.mw;
+  if (!state.market || mw?.status !== 'live') return;
+  const f = $('vs-form').elements;
+  const powerTh = Number(f.powerTh.value);
+  const efficiencyWth = Number(f.efficiencyWth.value);
+  const out = $('vs-out');
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) { out.replaceChildren(el('p', 'fine', 'Enter your TH and W/TH.')); return; }
+  const blocks = mw.clan.blocksWeekProjected ?? mw.clan.blocks;
+  const r = minerWarsVsSolo(state.market.income, {
+    powerTh, efficiencyWth, discountPct: Number(f.discountPct.value) || 0,
+    clanBlocksWeek: blocks, btcPerBlock: mw.league.btcPerBlock, clanPowerTh: mw.clan.powerTh,
+  });
+  const col = (label, btc, usdValue, win, sub) => {
+    const box = el('div');
+    box.append(el('p', 'eyebrow', label), el('p', `calc-big${win ? ' win' : ''}`, btcFmt(btc)), el('p', 'calc-sub', sub ?? `≈ ${usdSmart(usdValue)} net a week`));
+    return box;
+  };
+  const mwWins = r.better === 'minerWars';
+  const verdict = el('div');
+  verdict.append(el('p', 'eyebrow', 'Verdict'), el('p', `calc-big${mwWins ? ' win' : ''}`, mwWins ? 'Miner Wars' : 'Plain mining'),
+    el('p', 'calc-sub', r.differencePct === null ? 'Plain mining loses money at these settings' : `${r.differencePct >= 0 ? '+' : ''}${num(r.differencePct, 0)}% vs plain mining`));
+  out.replaceChildren(
+    col('Miner Wars with HONKSQUAD', r.minerWars.netBtc, r.minerWars.netUsd, mwWins, `${num(r.sharePct, 2)}% of the clan's ~${num(blocks)} blocks · ≈ ${usdSmart(r.minerWars.netUsd)} net`),
+    col('Plain mining', r.solo.netBtc, r.solo.netUsd, !mwWins),
+    verdict,
+  );
+  $('vs-note').textContent = `A week at the clan's current pace (${num(blocks)} blocks × ${btcFmt(mw.league.btcPerBlock)}), shared by TH out of ${num(mw.clan.powerTh, 0)} TH; maintenance is charged only on the TH-equivalent of the reward. Spells, GOMINING rewards and GoMining's league-average fee adjustments aren't included. If you're not in the clan yet, your TH would join the clan total. An estimate, not a promise.`;
+}
+
 function empty(message) {
   const div = document.createElement('div');
   div.className = 'empty';
@@ -383,14 +638,14 @@ function empty(message) {
   return div;
 }
 
-function table(container, headers, rows, { highlight } = {}) {
+function table(container, headers, rows, { highlight, text = [] } = {}) {
   const t = document.createElement('table');
   const head = t.createTHead().insertRow();
   headers.forEach((label, i) => {
     const th = document.createElement('th');
     th.scope = 'col';
     th.textContent = label;
-    if (i > 0) th.className = 'num';
+    if (i > 0 && !text.includes(i)) th.className = 'num';
     head.appendChild(th);
   });
   const body = t.createTBody();
@@ -400,7 +655,7 @@ function table(container, headers, rows, { highlight } = {}) {
     cells.forEach((value, i) => {
       const td = tr.insertCell();
       td.textContent = value;
-      if (i > 0) td.className = 'num';
+      if (i > 0 && !text.includes(i)) td.className = 'num';
     });
   });
   container.replaceChildren(t);
@@ -415,6 +670,9 @@ function renderAll() {
   renderSplit();
   renderCurve();
   renderNetwork();
+  renderOutlook();
+  renderBuilder();
+  renderVs();
   renderRoi();
   renderPrices();
   renderAdvisor();
@@ -498,6 +756,9 @@ function renderCalculator() {
       $('gc-month').textContent = usdSmart(m.netUsd);
       $('gc-month').classList.toggle('neg', m.netUsd < 0);
       $('gc-month-sub').textContent = `${num(m.netBtc, 8)} BTC`;
+      const fees = $('gc-fees');
+      fees.replaceChildren('Maintenance after discount: ', bold(`${usdSmart(d.feesUsd)}/day`), ' · ', bold(`${usdSmart(m.feesUsd)}/month`));
+      if (m.feesGomining !== null) fees.append(' · paid in GOMINING ≈ ', bold(`${num(m.feesGomining, 0)} GOMINING/month`), ` (${num(d.feesGomining, 1)}/day)`);
       $('gc-payback').textContent = r.payback ? (r.payback.days ? `${num(r.payback.days)} d` : 'Never') : '—';
       $('gc-payback-sub').textContent = r.payback
         ? `${num(r.payback.annualReturnPct, 1)}% a year on ${usd(r.payback.priceUsd, 2)}${listed ? ' (listed price)' : ''}`
@@ -552,8 +813,26 @@ function renderCalculator() {
 
 $('gc-form').addEventListener('input', () => {
   clearTimeout(state.gcTimer);
-  state.gcTimer = setTimeout(() => { renderCalculator(); renderAdvisor(); }, 120);
+  state.gcTimer = setTimeout(() => { renderCalculator(); renderAdvisor(); renderBuilder(); renderNetwork(); }, 120);
 });
+$('db-vip').replaceChildren(...VIP_LEVELS.map((row) => new Option(`${row.name} · ${num(row.discountPct, 1)}%`, row.name)));
+$('db-vip').value = VIP_LEVELS.some((row) => row.name === store.get('dbVip')) ? store.get('dbVip') : 'Bronze I';
+$('db-form').addEventListener('input', renderBuilder);
+$('db-form').addEventListener('submit', (event) => event.preventDefault());
+$('db-apply').addEventListener('click', () => {
+  if (state.builtDiscount === null || state.builtDiscount === undefined) return;
+  const input = $('gc-form').elements.discountPct;
+  input.value = String(state.builtDiscount);
+  if (state.builtBonus !== null && state.builtBonus !== undefined) $('gc-form').elements.reinvestBonusPct.value = String(state.builtBonus);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  $('db-apply').textContent = 'Applied ✓';
+  setTimeout(() => { $('db-apply').textContent = 'Use this discount'; }, 1500);
+});
+$('vs-form').addEventListener('input', (event) => {
+  if (event.target.name === 'member' && event.target.value) $('vs-form').elements.powerTh.value = event.target.value;
+  renderVs();
+});
+$('vs-form').addEventListener('submit', (event) => event.preventDefault());
 $('gc-form').addEventListener('submit', (event) => event.preventDefault());
 for (const button of $('gc-mode').children) button.addEventListener('click', () => setMode(button.dataset.mode));
 
@@ -723,6 +1002,7 @@ $('efficiency').addEventListener('change', (event) => {
   renderHero();
   renderSplit();
   renderCurve();
+  renderBreakEven(state.market?.outlook?.breakEven);
 });
 
 $('refresh').addEventListener('click', () => load({ refresh: true }));
@@ -817,3 +1097,5 @@ new ResizeObserver(([entry]) => {
 applySharedLink();
 setMode(state.gcMode);
 load();
+loadMinerWars();
+setInterval(renderClock, 30_000);

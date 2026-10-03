@@ -4,6 +4,7 @@
 //   GET /api/market     payout, prices, network, miner ROI, upgrade advisor, efficiency curve, sources
 //   GET /api/history    payouts recorded on days this server fetched live data
 //   GET /api/ticker     BTC and GOMINING prices plus the top 50 coins by market cap (ticker bar)
+//   GET /api/minerwars  HONKSQUAD's Miner Wars league, rank, blocks, prize estimate and members
 //   GET /api/earnings   ?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]
 //   /mcp/<MCP_ACCESS_KEY>  the MCP server over Streamable HTTP, for Claude's custom connectors
 //
@@ -98,7 +99,7 @@ const positive = (value) => {
  * @param {{ key: string, client: object, market: object, allowWrites?: boolean }} [options.mcp]
  *   enables /mcp/<key>; omitted or a short key leaves the endpoint off
  */
-export function createApp({ market, mcp, ticker }) {
+export function createApp({ market, mcp, ticker, minerWars }) {
   const mcpEnabled = Boolean(mcp?.key && mcp.key.length >= MIN_KEY_LENGTH);
   const routes = {
     '/api/market': async (url) => {
@@ -107,6 +108,7 @@ export function createApp({ market, mcp, ticker }) {
     },
     '/api/history': async () => ({ rows: await market.history() }),
     '/api/ticker': async () => (ticker ? ticker.get() : { btc: null, gomining: null, coins: [] }),
+    '/api/minerwars': async () => (minerWars ? minerWars.get() : { status: 'unavailable', error: 'Miner Wars data is not configured' }),
     '/api/earnings': async (url) => {
       const query = url.searchParams;
       const powerTh = positive(query.get('powerTh'));
@@ -165,9 +167,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv
   const dashboard = fromEnv(process.env, { withToken: false });
   const key = process.env.MCP_ACCESS_KEY?.trim();
   // The MCP tools may use a GoMining token (from the VPS env file); the dashboard never does.
-  const mcp = key ? { key, ...fromEnv(process.env), market: dashboard.market } : undefined;
+  const mcp = key ? { key, ...fromEnv(process.env), market: dashboard.market, minerWars: dashboard.minerWars } : undefined;
   const ticker = new TickerService({ external: new ExternalService() });
-  createHttpServer(createApp({ market: dashboard.market, mcp, ticker })).listen(port, host, () => {
+  createHttpServer(createApp({ market: dashboard.market, mcp, ticker, minerWars: dashboard.minerWars })).listen(port, host, () => {
     console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     if (key && key.length < MIN_KEY_LENGTH) console.log(`Remote MCP is OFF: MCP_ACCESS_KEY must be at least ${MIN_KEY_LENGTH} characters`);
     else console.log(`Remote MCP: ${key ? 'on at /mcp/<MCP_ACCESS_KEY>' : 'off (MCP_ACCESS_KEY not set)'}`);

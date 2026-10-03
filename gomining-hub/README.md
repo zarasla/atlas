@@ -3,6 +3,9 @@
 A GoMining dashboard and an MCP server for Claude, built on one shared data layer, so the numbers on screen and the numbers Claude quotes always match.
 
 - **Dashboard** in The Goose's brand, led by the **Goose Calculator** (rewards per day/week/month/year with your maintenance discount, in USD, BTC, sats and GOMINING; and an investment plan that simulates monthly buys and reinvesting), then: net reward per TH, BTC and GOMINING prices (24h change), hashprice, payout vs the 365-day average, network hashrate and difficulty, the next difficulty adjustment, where each TH's payout goes, net reward by efficiency with break-even, payback and annual return for every miner GoMining sells, an upgrade advisor, miner prices, and history charts (sats/TH, hashprice, BTC, hashrate, GOMINING). Works on a phone.
+- **HONKSQUAD in Miner Wars**: the clan's live league, rank and zone (promotion, safe, relegation), blocks won, TH, the league prize fund and the clan's estimated BTC this cycle, the clans around it, the member list by blocks and TH, and a Miner Wars vs plain mining comparison for any member.
+- **Outlook**: break-even BTC price per W/TH, what the next difficulty adjustment does to your sats per TH, the halving countdown and the crypto Fear & Greed index.
+- **Discount builder**: GoMining's maintenance discount from its three parts (GOMINING balance coverage up to 20%, VIP level up to 6%, Service Button 3%), how much GOMINING the next step needs, and maintenance cost in GOMINING.
 - **MCP server**: the same data as tools Claude can call, plus a passthrough for your own GoMining account endpoints.
 
 ![The Goose's mining dashboard](docs/dashboard.png)
@@ -41,12 +44,20 @@ Three public GoMining endpoints, the same ones app.gomining.com calls without lo
 | `GET /api/nft-collection/find-all-generative` | Miners GoMining sells, with prices |
 | `POST /api/nft/get-upgrade-rate` | Per-W/TH valuation and upgrade price tables |
 
-Context from two keyless public sources, each optional (its panel says "unavailable" if it's down, never sample data):
+Miner Wars, from GoMining's public leaderboards (no token; the same boards the app shows):
+
+| Endpoint | Gives |
+|---|---|
+| `POST /api/nft-game/clan-leaderboard/index-v2` | Clans in a league: position, blocks, TH, zone, prize fund (read every 10 minutes) |
+| `POST /api/nft-game/user-leaderboard/index` | Players in a league with their clan, blocks and TH, 50 per page (HONKSQUAD's members rebuilt every 30 minutes) |
+
+Context from three keyless public sources, each optional (its panel says "unavailable" if it's down, never sample data):
 
 | Source | Gives |
 |---|---|
 | mempool.space | Network hashrate, difficulty, next adjustment (progress, expected change, date), block height, fees |
 | CoinGecko | BTC and GOMINING prices with 24h change and market cap; top 50 coins by market cap for the ticker bar (fetched at most once a minute) |
+| alternative.me | Crypto Fear & Greed index (today, yesterday, a week ago) |
 
 Results are cached for 5 minutes. The refresh button skips the cache.
 
@@ -62,6 +73,7 @@ Results are cached for 5 minutes. The refresh button skips the cache.
 |---|---|
 | `GET /api/market` | Payout, miner prices, upgrade tables, efficiency curve, data source. `?refresh=1` skips the cache |
 | `GET /api/history` | Recorded payout days |
+| `GET /api/minerwars` | HONKSQUAD's Miner Wars standing, neighbours, board and members |
 | `GET /api/earnings?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]` | Earnings and payback |
 
 The account passthrough is not exposed over HTTP. Only the MCP server, which runs locally inside Claude, can use your token.
@@ -104,6 +116,9 @@ claude mcp add gomining -e GOMINING_TOKEN=your-token -- node /path/to/atlas/gomi
 | `gomining_miner_roi` | Payback and annual return of every miner for sale |
 | `gomining_upgrade_advisor` | Cost vs electricity saved for each W/TH upgrade step |
 | `gomining_network_stats` | Bitcoin network stats and BTC/GOMINING prices |
+| `gomining_outlook` | Break-even BTC price per W/TH, next difficulty adjustment impact, halving countdown, Fear & Greed |
+| `gomining_maintenance_discount` | Discount from GOMINING balance, VIP level and Service Button, and the GOMINING needed for the next step |
+| `gomining_clan_miner_wars` | HONKSQUAD's Miner Wars league, rank, blocks, BTC estimate, members; optional Miner Wars vs plain mining |
 | `gomining_payout_history` | Recorded payout days |
 | `gomining_api_request` | Any `https://api.gomining.com/api/...` endpoint, with your token |
 | `gomining_status` | Token set, writes allowed, live or sample data |

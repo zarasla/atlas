@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { calculateEarnings, dailyBreakdownPerTh, efficiencyCurve, findListedPrice, hashprice, minerRoi, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
+import { VIP_LEVELS, breakEvenBtcPrice, calculateEarnings, dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, maintenanceDiscount, minerRoi, minerWarsVsSolo, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
 import { GoMiningError } from '../core/client.js';
 
 const MAX_RESPONSE_CHARS = 60_000;
@@ -32,9 +32,10 @@ const provenance = (market, part) => ({
   ...(market.sources[part] === 'sample' ? { sampleCapturedAt: market.sampleCapturedAt, liveError: market.errors[part] } : {}),
 });
 
-export function createServer({ client, market, allowWrites = false }) {
+export function createServer({ client, market, minerWars, allowWrites = false }) {
   const server = new McpServer({ name: 'gomining-hub', version: '0.1.0' });
   const readOnly = { readOnlyHint: true, openWorldHint: true };
+  const marketData = () => market.get();
 
   server.registerTool('gomining_daily_reward', {
     title: 'GoMining daily reward',
@@ -123,6 +124,69 @@ export function createServer({ client, market, allowWrites = false }) {
       sources: { network: data.sources.network, prices: data.sources.prices },
       ...(data.errors.network || data.errors.prices ? { errors: { network: data.errors.network, prices: data.errors.prices } } : {}),
     };
+  }));
+
+  server.registerTool('gomining_outlook', {
+    title: 'What could change the payout',
+    description: 'Break-even BTC price for each W/TH (the BTC price where the payout only just covers electricity and service), what the next difficulty adjustment does to sats per TH, the halving countdown, and the crypto Fear & Greed index.',
+    inputSchema: {
+      discountPct: z.number().min(0).max(100).optional().describe('Maintenance discount % for the break-even prices'),
+      powerTh: z.number().positive().optional().describe('Also show the sats-per-day change from the difficulty adjustment for this many TH'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ discountPct, powerTh }) => {
+    const data = await market.get();
+    const network = data.network;
+    return {
+      breakEven: breakEvenBtcPrice(data.income, { discountPct }),
+      difficulty: difficultyImpact(data.income, network?.nextAdjustment, { powerTh }),
+      halving: network ? halving(network.blockHeight, { avgBlockMinutes: network.nextAdjustment?.avgBlockMinutes, satsPerThDay: data.income.rewardSatsPerThDay }) : null,
+      fearGreed: data.sentiment,
+      sources: { income: data.sources.income, network: data.sources.network, sentiment: data.sources.sentiment },
+    };
+  }));
+
+  server.registerTool('gomining_maintenance_discount', {
+    title: 'Maintenance discount builder',
+    description: 'GoMining maintenance discount from its three parts: paying in GOMINING (1% per 18 days of maintenance your GOMINING balance covers, max 20%), VIP level (0% Bronze I to 6% Elite; pass vipLevel) and the Service Button (3%). Also how much GOMINING is needed for the next step and for the full 20%.',
+    inputSchema: {
+      powerTh: z.number().positive().describe('Total TH of the miners'),
+      efficiencyWth: z.number().positive().describe('Average W/TH'),
+      gominingHeld: z.number().min(0).optional().describe('GOMINING in the virtual wallet plus locked'),
+      vipLevel: z.enum(VIP_LEVELS.map((row) => row.name)).optional().describe('VIP level, e.g. "Platinum II" (sets the VIP discount)'),
+      vipPct: z.number().min(0).max(6).optional().describe('VIP discount % instead of a level'),
+      serviceButton: z.boolean().optional().describe('Service Button used (3%)'),
+    },
+    annotations: readOnly,
+  }, tool(async (args) => {
+    const data = await market.get();
+    const gominingUsd = data.prices?.gomining?.usd;
+    if (!gominingUsd) throw new Error('The GOMINING price is unavailable right now, so the token part cannot be worked out');
+    return { ...maintenanceDiscount(data.income, { ...args, gominingUsd }), gominingUsd };
+  }));
+
+  server.registerTool('gomining_clan_miner_wars', {
+    title: 'HONKSQUAD in Miner Wars',
+    description: 'HONKSQUAD\'s live Miner Wars standing from GoMining\'s public leaderboards: league, rank, zone (promotion, safe, relegation), blocks won, TH, the league prize fund and BTC per block, the clan\'s estimated BTC this cycle, neighbouring clans, and members by blocks and TH. Optionally compares a week of Miner Wars with plain mining for a member\'s power.',
+    inputSchema: {
+      powerTh: z.number().positive().optional().describe('A member\'s TH, to compare Miner Wars with plain mining'),
+      efficiencyWth: z.number().positive().optional().describe('That member\'s W/TH (default 15)'),
+      discountPct: z.number().min(0).max(100).optional().describe('That member\'s maintenance discount %'),
+      includeBoard: z.boolean().optional().describe('Include the whole league board'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ powerTh, efficiencyWth = 15, discountPct = 0, includeBoard = false }) => {
+    if (!minerWars) throw new Error('Miner Wars data is not configured on this server');
+    const data = await minerWars.get({ waitForMembers: true });
+    if (data.status !== 'live') return data;
+    const { board, ...rest } = data;
+    let comparison;
+    if (powerTh) {
+      const market = await marketData();
+      const clanPowerTh = data.clan.powerTh;
+      comparison = minerWarsVsSolo(market.income, { powerTh, efficiencyWth, discountPct, clanBlocksWeek: data.clan.blocksWeekProjected ?? data.clan.blocks, btcPerBlock: data.league.btcPerBlock, clanPowerTh });
+    }
+    return { ...rest, ...(includeBoard ? { board } : {}), ...(comparison ? { vsSolo: comparison } : {}) };
   }));
 
   server.registerTool('gomining_calculate_earnings', {

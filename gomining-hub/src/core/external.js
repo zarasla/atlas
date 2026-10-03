@@ -1,6 +1,7 @@
 // Public, keyless data from outside GoMining that puts the payout in context:
 //   mempool.space   Bitcoin network hashrate, difficulty, next difficulty adjustment, block height, fees
 //   CoinGecko       BTC and GOMINING token prices with 24h change and market cap
+//   alternative.me  Crypto Fear & Greed index (today, yesterday, a week ago)
 //
 // Each source is optional: if one is down or rate-limited, its part comes back null with an error
 // message and the rest of the dashboard carries on. Results are cached like the GoMining data.
@@ -8,6 +9,7 @@
 const TIMEOUT_MS = 10_000;
 const MEMPOOL = 'https://mempool.space/api';
 const COINGECKO = 'https://api.coingecko.com/api/v3';
+const FEAR_GREED = 'https://api.alternative.me/fng/?limit=8';
 // GoMining's token has been listed under both ids; whichever CoinGecko answers for is used.
 const TOKEN_IDS = ['gomining-token', 'gmt-token'];
 
@@ -89,16 +91,29 @@ export class ExternalService {
       }));
   }
 
-  // Both parts in parallel; a failing part is null with its error kept.
-  async get() {
-    const [network, prices] = await Promise.allSettled([this.network(), this.prices()]);
-    const errors = {};
-    if (network.status === 'rejected') errors.network = network.reason?.message ?? String(network.reason);
-    if (prices.status === 'rejected') errors.prices = prices.reason?.message ?? String(prices.reason);
-    return {
-      network: network.status === 'fulfilled' ? network.value : null,
-      prices: prices.status === 'fulfilled' ? prices.value : null,
-      errors,
+  // Fear & Greed index, 0 (extreme fear) to 100 (extreme greed), newest first from alternative.me.
+  async sentiment() {
+    const data = await this.json(FEAR_GREED);
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    const pick = (row) => {
+      const value = Number(row?.value);
+      return row && Number.isFinite(value) ? { value, label: String(row.value_classification ?? '').slice(0, 30) } : null;
     };
+    const today = pick(rows[0]);
+    if (!today) throw new Error('alternative.me returned no Fear & Greed value');
+    return { ...today, yesterday: pick(rows[1])?.value ?? null, lastWeek: pick(rows[7])?.value ?? null };
+  }
+
+  // All parts in parallel; a failing part is null with its error kept.
+  async get() {
+    const names = ['network', 'prices', 'sentiment'];
+    const settled = await Promise.allSettled(names.map((name) => this[name]()));
+    const result = { errors: {} };
+    names.forEach((name, index) => {
+      const outcome = settled[index];
+      result[name] = outcome.status === 'fulfilled' ? outcome.value : null;
+      if (outcome.status === 'rejected') result.errors[name] = outcome.reason?.message ?? String(outcome.reason);
+    });
+    return result;
   }
 }

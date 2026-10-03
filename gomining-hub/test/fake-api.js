@@ -37,6 +37,19 @@ export const coingecko = {
   'gomining-token': { usd: 0.42, eur: 0.39, usd_24h_change: -2.5, usd_market_cap: 170e6 },
 };
 
+export const fearGreed = { data: [{ value: '62', value_classification: 'Greed' }, { value: '58', value_classification: 'Greed' }, ...Array(5).fill({ value: '50', value_classification: 'Neutral' }), { value: '47', value_classification: 'Neutral' }] };
+
+// Shaped like GoMining's Miner Wars leaderboards: HONKSQUAD (43680) is in league 3, 50 rows per page.
+const clanRow = (clanId, name, position, blocks, power) => ({ blocksMined: blocks, btcMined: 0, clanId, nftPower: power, position, clan: { id: clanId, name, image: null, isDeleted: false } });
+export const clanBoard = {
+  count: 6, totalMinedBlocks: 400, btcFund: '0.4', status: 'active', me: null, totalPower: 50000, weightedEnergyEfficiencyPerTh: 17.9, weightedAvgDiscount: 0.0639,
+  clansPromoted: [clanRow(1, 'Alpha', 1, 120, 9000), clanRow(43680, 'HONKSQUAD', 2, 100, 15000)],
+  clansRemaining: [clanRow(3, 'Gamma', 3, 80, 12000), clanRow(4, 'Delta', 4, 60, 8000)],
+  clansRelegated: [clanRow(5, 'Eps', 5, 30, 4000), clanRow(6, 'Zeta', 6, 10, 2000)],
+};
+const player = (userId, alias, clanId, position, blocks, power) => ({ nftPower: power, position, blocksMined: blocks, clanId, gmtRewards: 0, usedAbilities: [{ count: 3 }, { count: 2 }], user: { userId, alias, image: null } });
+export const players = Array.from({ length: 120 }, (_, i) => player(1000 + i, `p${i}`, i % 3 === 0 ? 43680 : 1, i + 1, 120 - i, 10 + i));
+
 const reply = (status, value) => new Response(typeof value === 'string' ? value : JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 
 export function fakeFetch(routes = {}) {
@@ -56,6 +69,17 @@ export function fakeFetch(routes = {}) {
       case 'GET /api/blocks/tip/height': return reply(200, mempool.height);
       case 'GET /api/v1/fees/recommended': return reply(200, mempool.fees);
       case 'GET /api/v3/simple/price': return reply(200, coingecko);
+      case 'GET /fng/': return reply(200, fearGreed);
+      case 'POST /api/nft-game/clan-leaderboard/index-v2': {
+        const body = JSON.parse(init.body);
+        if (body.pagination.limit > 50) return reply(400, { description: 'limit must be less than or equal to 50' });
+        return reply(200, { data: body.leagueId === 3 ? clanBoard : { count: 0, totalMinedBlocks: 0, btcFund: '0', clansPromoted: [], clansRemaining: [], clansRelegated: [] } });
+      }
+      case 'POST /api/nft-game/user-leaderboard/index': {
+        const { leagueId, pagination } = JSON.parse(init.body);
+        const rows = leagueId === 3 ? players.slice(pagination.skip, pagination.skip + pagination.limit) : [];
+        return reply(200, { data: { participants: rows, count: leagueId === 3 ? players.length : 0, totalMinedBlocks: 400 } });
+      }
       case 'GET /api/v3/coins/markets': return reply(200, [
         { market_cap_rank: 1, symbol: 'btc', name: 'Bitcoin', current_price: 80500, price_change_percentage_24h: 1.25 },
         { market_cap_rank: 2, symbol: 'eth', name: 'Ethereum', current_price: 3100.5, price_change_percentage_24h: -0.8 },

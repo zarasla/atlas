@@ -6,7 +6,7 @@
 // Each live payout is also recorded by payout date in data/history.json, which builds the
 // day-by-day series GoMining's API does not provide.
 //
-// An optional ExternalService adds Bitcoin network stats and BTC/GOMINING prices. Those parts are
+// An optional ExternalService adds Bitcoin network stats, BTC/GOMINING prices and Fear & Greed. Those parts are
 // `null` (source `unavailable`) when their providers can't be reached; they never use sample data.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -60,7 +60,7 @@ export class MarketService {
     ];
     const [settled, outside] = await Promise.all([
       Promise.allSettled(parts.map(([, fetchPart, normalize]) => fetchPart().then(normalize))),
-      this.external ? this.external.get().catch((error) => ({ network: null, prices: null, errors: { network: error.message, prices: error.message } })) : null,
+      this.external ? this.external.get().catch((error) => ({ network: null, prices: null, sentiment: null, errors: { network: error.message, prices: error.message, sentiment: error.message } })) : null,
     ]);
 
     const result = { source: 'live', fetchedAt: new Date(this.now()).toISOString(), errors: {}, sources: {} };
@@ -77,7 +77,7 @@ export class MarketService {
       }
     }
     if (result.source === 'sample') result.sampleCapturedAt = (await this.snapshot()).capturedAt;
-    for (const part of ['network', 'prices']) {
+    for (const part of ['network', 'prices', 'sentiment']) {
       result[part] = outside?.[part] ?? null;
       result.sources[part] = result[part] ? 'live' : 'unavailable';
       if (outside?.errors?.[part]) result.errors[part] = outside.errors[part];

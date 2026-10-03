@@ -193,6 +193,12 @@ export function marketSummary(data) {
     minerRoi: roi,
     fastestPayback: best,
     upgradeAdvisor: upgradeAdvisor(income, data.upgrades),
+    outlook: {
+      breakEven: breakEvenBtcPrice(income),
+      difficulty: difficultyImpact(income, data.network?.nextAdjustment),
+      halving: data.network ? halving(data.network.blockHeight, { avgBlockMinutes: data.network.nextAdjustment?.avgBlockMinutes, satsPerThDay: income.rewardSatsPerThDay }) : null,
+      sentiment: data.sentiment ?? null,
+    },
   };
 }
 
@@ -225,6 +231,9 @@ export function rewardsBreakdown(market, { powerTh, efficiencyWth, discountPct =
       netBtc: round((netUsd * days) / market.btcPriceUsd, 8),
       netSats: Math.round(toSats(netUsd * days, market.btcPriceUsd)),
       netGomining: gominingUsd > 0 ? round((netUsd * days) / gominingUsd, 2) : null,
+      // What maintenance costs after the discount, and the same in GOMINING tokens if paid that way.
+      feesUsd: round((electricityUsd + serviceUsd - discountUsd) * days, 4),
+      feesGomining: gominingUsd > 0 ? round(((electricityUsd + serviceUsd - discountUsd) * days) / gominingUsd, 2) : null,
     };
   }
   const payback = priceUsd > 0 ? {
@@ -341,5 +350,159 @@ export function atBtcPrice(market, btcPriceUsd) {
     btcPriceUsd,
     rewardUsdPerThDay: market.rewardUsdPerThDay * scale,
     averageRewardUsdPerThDay365: market.averageRewardUsdPerThDay365 === null ? null : market.averageRewardUsdPerThDay365 * scale,
+  };
+}
+
+// ---- Outlook: what could change the payout ------------------------------------------------------
+
+const clampPct = (value) => Math.min(Math.max(Number(value) || 0, 0), 100) / 100;
+
+// The BTC price at which the payout only just covers electricity and service, per W/TH. The payout in
+// sats per TH is set by difficulty, so break-even = USD fees / BTC paid per TH. Difficulty held constant.
+export function breakEvenBtcPrice(market, { discountPct = 0, kwhPriceUsd, min = EFFICIENCY_RANGE.min, max = EFFICIENCY_RANGE.max } = {}) {
+  const discount = clampPct(discountPct);
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const btcPerTh = market.rewardSatsPerThDay / SATS_PER_BTC;
+  const rows = [];
+  for (let level = min; level <= max; level++) {
+    const feesUsd = (electricity * level + market.serviceUsdPerThDay) * (1 - discount);
+    const price = btcPerTh > 0 ? feesUsd / btcPerTh : null;
+    rows.push({
+      efficiencyWth: level,
+      breakEvenBtcUsd: price === null ? null : Math.round(price),
+      headroomPct: price ? round((market.btcPriceUsd / price - 1) * 100, 1) : null,
+    });
+  }
+  return { btcPriceUsd: market.btcPriceUsd, discountPct: discount * 100, rows };
+}
+
+// What the next difficulty adjustment does to the payout: sats per TH scale with 1 / difficulty.
+export function difficultyImpact(market, adjustment, { powerTh } = {}) {
+  const change = adjustment?.estimatedChangePct;
+  if (typeof change !== 'number' || !Number.isFinite(change)) return null;
+  const satsNow = market.rewardSatsPerThDay;
+  const satsAfter = satsNow / (1 + change / 100);
+  return {
+    difficultyChangePct: change,
+    satsPerThNow: round(satsNow, 2),
+    satsPerThAfter: round(satsAfter, 2),
+    payoutChangePct: round((satsAfter / satsNow - 1) * 100, 2),
+    satsPerDayChange: powerTh > 0 ? round((satsAfter - satsNow) * powerTh, 1) : null,
+    estimatedDate: adjustment.estimatedDate ?? null,
+    remainingBlocks: adjustment.remainingBlocks ?? null,
+    progressPct: adjustment.progressPct ?? null,
+  };
+}
+
+export const HALVING_INTERVAL = 210_000;
+
+// Countdown to the next halving from the current block height. After it the block subsidy (and so
+// roughly the sats per TH, transaction fees aside) halves at the same difficulty.
+export function halving(blockHeight, { avgBlockMinutes, satsPerThDay, now = Date.now() } = {}) {
+  if (!Number.isInteger(blockHeight) || blockHeight < 0) return null;
+  const epoch = Math.floor(blockHeight / HALVING_INTERVAL);
+  const nextHeight = (epoch + 1) * HALVING_INTERVAL;
+  const blocksLeft = nextHeight - blockHeight;
+  const minutes = avgBlockMinutes > 0 ? avgBlockMinutes : 10;
+  const msLeft = blocksLeft * minutes * 60_000;
+  return {
+    blockHeight,
+    nextHalvingHeight: nextHeight,
+    blocksLeft,
+    daysLeft: Math.round(msLeft / 86_400_000),
+    estimatedDate: new Date(now + msLeft).toISOString(),
+    progressPct: round(((HALVING_INTERVAL - blocksLeft) / HALVING_INTERVAL) * 100, 1),
+    subsidyBtcNow: 50 / 2 ** epoch,
+    subsidyBtcAfter: 50 / 2 ** (epoch + 1),
+    satsPerThAfter: satsPerThDay > 0 ? round(satsPerThDay / 2, 2) : null,
+  };
+}
+
+// ---- Maintenance discount -----------------------------------------------------------------------
+
+// GoMining's maintenance discount has three parts that add up:
+//   paying in GOMINING  1% per 18 days of maintenance the GOMINING balance (wallet + locked) covers, max 20%
+//   VIP level           0% (Bronze I) up to 6% (Elite), see VIP_LEVELS
+//   Service Button      3% when used
+export const TOKEN_DISCOUNT = { daysPerPct: 18, maxPct: 20 };
+// GoMining VIP levels: maintenance discount % and the bonus TH when reinvesting rewards in TH.
+export const VIP_LEVELS = [
+  ['Bronze I', 0], ['Bronze II', 0.3], ['Silver I', 0.6], ['Silver II', 0.9], ['Silver III', 1.2], ['Gold I', 1.5], ['Gold II', 1.8],
+  ['Platinum I', 2.1], ['Platinum II', 2.4], ['Platinum III', 2.7], ['Diamond I', 3], ['Diamond II', 3.3], ['Diamond III', 3.6], ['Diamond IV', 3.9], ['Diamond V', 4.2],
+  ['Legend I', 4.5], ['Legend II', 4.8], ['Legend III', 5.1], ['Legend IV', 5.4], ['Legend V', 5.7], ['Elite', 6],
+].map(([name, discountPct], index) => ({ name, discountPct, reinvestBonusPct: index >= 10 ? 10 : index >= 2 ? 5 : 0 }));
+export const SERVICE_BUTTON_PCT = 3;
+
+export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHeld = 0, gominingUsd, vipLevel, vipPct = 0, serviceButton = false, kwhPriceUsd }) {
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const dailyUsd = (electricity * efficiencyWth + market.serviceUsdPerThDay) * powerTh;
+  const held = Math.max(Number(gominingHeld) || 0, 0);
+  const price = gominingUsd > 0 ? gominingUsd : null;
+  const coverageDays = price && dailyUsd > 0 ? Math.floor((held * price) / dailyUsd) : 0;
+  const tokenPct = Math.min(Math.floor(coverageDays / TOKEN_DISCOUNT.daysPerPct), TOKEN_DISCOUNT.maxPct);
+  const level = VIP_LEVELS.find((row) => row.name.toLowerCase() === String(vipLevel ?? '').toLowerCase());
+  const vip = level ? level.discountPct : Math.min(Math.max(Number(vipPct) || 0, 0), 6);
+  const buttonPct = serviceButton ? SERVICE_BUTTON_PCT : 0;
+  const tokensForDays = (days) => (price ? Math.ceil((days * dailyUsd) / price) : null);
+  const nextPct = tokenPct < TOKEN_DISCOUNT.maxPct ? tokenPct + 1 : null;
+  return {
+    dailyMaintenanceUsd: round(dailyUsd, 4),
+    coverageDays,
+    tokenPct,
+    vipPct: vip,
+    vipLevel: level?.name ?? null,
+    reinvestBonusPct: level?.reinvestBonusPct ?? null,
+    serviceButtonPct: buttonPct,
+    totalPct: round(tokenPct + vip + buttonPct, 2),
+    gominingForMax: tokensForDays(TOKEN_DISCOUNT.maxPct * TOKEN_DISCOUNT.daysPerPct),
+    next: nextPct === null ? null : { pct: nextPct, gominingNeeded: tokensForDays(nextPct * TOKEN_DISCOUNT.daysPerPct) },
+  };
+}
+
+// ---- Miner Wars ---------------------------------------------------------------------------------
+
+// Cycles run Tuesday 00:00 UTC to Tuesday 00:00 UTC; cycle 148 started on 16 Jun 2026.
+const CYCLE_ANCHOR = { number: 148, startMs: Date.UTC(2026, 5, 16) };
+const WEEK_MS = 7 * 86_400_000;
+
+export function minerWarsCycle(now = Date.now()) {
+  const index = Math.floor((now - CYCLE_ANCHOR.startMs) / WEEK_MS);
+  const startMs = CYCLE_ANCHOR.startMs + index * WEEK_MS;
+  return {
+    number: CYCLE_ANCHOR.number + index,
+    start: new Date(startMs).toISOString(),
+    end: new Date(startMs + WEEK_MS).toISOString(),
+    elapsedDays: round((now - startMs) / 86_400_000, 3),
+  };
+}
+
+// One week of Miner Wars against one week of plain mining, for a member's power.
+// Miner Wars: the clan's BTC (blocks won x BTC per block) is shared by TH, and maintenance is charged
+// only on the TH-equivalent of that reward, so net = gross x (1 - fees per TH / payout per TH).
+// Solo: today's payout per TH minus fees. Both use the member's own W/TH and discount; spells,
+// personal GOMINING rewards and league-average fee adjustments are left out.
+export function minerWarsVsSolo(market, { powerTh, efficiencyWth, discountPct = 0, clanBlocksWeek, btcPerBlock, clanPowerTh, kwhPriceUsd }) {
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
+  const discount = clampPct(discountPct);
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const feesPerThDay = (electricity * efficiencyWth + market.serviceUsdPerThDay) * (1 - discount);
+  const soloNetUsd = (market.rewardUsdPerThDay - feesPerThDay) * powerTh * 7;
+  const share = clanPowerTh > 0 ? Math.min(powerTh / clanPowerTh, 1) : 0;
+  const mwGrossBtc = Math.max(clanBlocksWeek || 0, 0) * Math.max(btcPerBlock || 0, 0) * share;
+  const feeRatio = market.rewardUsdPerThDay > 0 ? feesPerThDay / market.rewardUsdPerThDay : 1;
+  const mwNetBtc = mwGrossBtc * (1 - feeRatio);
+  const soloNetBtc = soloNetUsd / market.btcPriceUsd;
+  return {
+    sharePct: round(share * 100, 4),
+    solo: { netBtc: round(soloNetBtc, 8), netUsd: round(soloNetUsd, 2) },
+    minerWars: {
+      grossBtc: round(mwGrossBtc, 8),
+      feesBtc: round(mwGrossBtc * feeRatio, 8),
+      netBtc: round(mwNetBtc, 8),
+      netUsd: round(mwNetBtc * market.btcPriceUsd, 2),
+    },
+    differencePct: soloNetBtc > 0 ? round((mwNetBtc / soloNetBtc - 1) * 100, 1) : null,
+    better: mwNetBtc > soloNetBtc ? 'minerWars' : 'solo',
   };
 }
