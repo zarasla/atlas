@@ -425,12 +425,89 @@ export function halving(blockHeight, { avgBlockMinutes, satsPerThDay, now = Date
 //   VIP level           0% (Bronze I) up to 6% (Elite), see VIP_LEVELS
 //   Service Button      3% when used
 export const TOKEN_DISCOUNT = { daysPerPct: 18, maxPct: 20 };
-// GoMining VIP levels: maintenance discount % and the bonus TH when reinvesting rewards in TH.
+// GoMining VIP levels (from the app's VIP table). A level is reached by ANY one of three paths: own
+// mining power (TH), locked veGOMINING, or referral activity in USD over the last 180 days.
+// Each level sets the maintenance discount, the Simple Earn APR multiplier, the bonus TH when
+// reinvesting rewards in TH, and the referral royalty.
 export const VIP_LEVELS = [
-  ['Bronze I', 0], ['Bronze II', 0.3], ['Silver I', 0.6], ['Silver II', 0.9], ['Silver III', 1.2], ['Gold I', 1.5], ['Gold II', 1.8],
-  ['Platinum I', 2.1], ['Platinum II', 2.4], ['Platinum III', 2.7], ['Diamond I', 3], ['Diamond II', 3.3], ['Diamond III', 3.6], ['Diamond IV', 3.9], ['Diamond V', 4.2],
-  ['Legend I', 4.5], ['Legend II', 4.8], ['Legend III', 5.1], ['Legend IV', 5.4], ['Legend V', 5.7], ['Elite', 6],
-].map(([name, discountPct], index) => ({ name, discountPct, reinvestBonusPct: index >= 10 ? 10 : index >= 2 ? 5 : 0 }));
+  // name,          TH,     veGOMINING,  referral USD, discount %, Simple Earn x, royalty %
+  ['Bronze I',      0,      0,           0,            0,          1,     5],
+  ['Bronze II',     5,      50,          500,          0.3,        1.08,  5],
+  ['Silver I',      10,     100,         1_000,        0.6,        1.1,   7],
+  ['Silver II',     25,     250,         2_500,        0.9,        1.12,  7],
+  ['Silver III',    50,     500,         5_000,        1.2,        1.14,  7],
+  ['Gold I',        100,    1_000,       10_000,       1.5,        1.16,  9],
+  ['Gold II',       200,    2_000,       20_000,       1.8,        1.18,  9],
+  ['Platinum I',    500,    5_000,       50_000,       2.1,        1.2,   12],
+  ['Platinum II',   1_000,  10_000,      100_000,      2.4,        1.22,  12],
+  ['Platinum III',  2_500,  25_000,      250_000,      2.7,        1.24,  12],
+  ['Diamond I',     5_000,  50_000,      500_000,      3,          1.26,  14],
+  ['Diamond II',    7_000,  70_000,      700_000,      3.3,        1.28,  14],
+  ['Diamond III',   9_000,  90_000,      900_000,      3.6,        1.3,   14],
+  ['Diamond IV',    12_000, 120_000,     1_200_000,    3.9,        1.32,  14],
+  ['Diamond V',     20_000, 200_000,     2_000_000,    4.2,        1.34,  14],
+  ['Legend I',      50_000, 500_000,     5_000_000,    4.5,        1.36,  15],
+  ['Legend II',     100_000, 1_000_000,  10_000_000,   4.8,        1.38,  15],
+  ['Legend III',    250_000, 2_500_000,  25_000_000,   5.1,        1.4,   15],
+  ['Legend IV',     400_000, 4_000_000,  40_000_000,   5.4,        1.42,  15],
+  ['Legend V',      750_000, 7_500_000,  75_000_000,   5.7,        1.44,  15],
+  ['Elite',         1_000_000, 10_000_000, 100_000_000, 6,         1.46,  15],
+].map(([name, th, veGomining, referralUsd, discountPct, simpleEarnMultiplier, royaltyPct], index) => ({
+  name, th, veGomining, referralUsd, discountPct, simpleEarnMultiplier, royaltyPct, reinvestBonusPct: index >= 10 ? 10 : index >= 2 ? 5 : 0,
+}));
+
+const findVip = (name) => VIP_LEVELS.find((row) => row.name.toLowerCase() === String(name ?? '').toLowerCase());
+
+// Which VIP level a member has (the highest any one path reaches) and what the next level needs.
+export function vipStatus({ powerTh = 0, veGomining = 0, referralUsd = 0 } = {}) {
+  const have = { th: Math.max(Number(powerTh) || 0, 0), veGomining: Math.max(Number(veGomining) || 0, 0), referralUsd: Math.max(Number(referralUsd) || 0, 0) };
+  const reached = (key) => VIP_LEVELS.reduce((best, row, index) => (have[key] >= row[key] ? index : best), 0);
+  const byPath = { th: reached('th'), veGomining: reached('veGomining'), referralUsd: reached('referralUsd') };
+  const index = Math.max(byPath.th, byPath.veGomining, byPath.referralUsd);
+  const level = VIP_LEVELS[index];
+  const nextRow = VIP_LEVELS[index + 1] ?? null;
+  return {
+    level,
+    reachedBy: Object.keys(byPath).filter((key) => byPath[key] === index && index > 0),
+    byPath: Object.fromEntries(Object.entries(byPath).map(([key, i]) => [key, VIP_LEVELS[i].name])),
+    next: nextRow && {
+      level: nextRow,
+      // Any ONE of these is enough.
+      needs: {
+        th: round(Math.max(nextRow.th - have.th, 0), 2),
+        veGomining: round(Math.max(nextRow.veGomining - have.veGomining, 0), 2),
+        referralUsd: round(Math.max(nextRow.referralUsd - have.referralUsd, 0), 2),
+      },
+      gains: {
+        discountPct: round(nextRow.discountPct - level.discountPct, 2),
+        simpleEarnMultiplier: round(nextRow.simpleEarnMultiplier - level.simpleEarnMultiplier, 2),
+        reinvestBonusPct: nextRow.reinvestBonusPct - level.reinvestBonusPct,
+        royaltyPct: nextRow.royaltyPct - level.royaltyPct,
+      },
+    },
+  };
+}
+
+// Simple Earn: idle balances earn BTC (paid every 4 hours) at the asset's base APR times the VIP
+// multiplier. Base APRs change; GoMining shows the current ones in the app.
+export const SIMPLE_EARN_ASSETS = { BTC: 2, USDT: 12.02, USDC: 12.02, BNB: 0.5 };
+
+export function simpleEarn({ amount, assetPriceUsd, aprPct, vipLevel, btcPriceUsd }) {
+  if (!(amount > 0)) throw new Error('Enter an amount');
+  if (!(assetPriceUsd > 0)) throw new Error('The asset price is unavailable');
+  if (!(aprPct >= 0)) throw new Error('Enter the base APR');
+  if (!(btcPriceUsd > 0)) throw new Error('The BTC price is unavailable');
+  const level = findVip(vipLevel) ?? VIP_LEVELS[0];
+  const effectiveAprPct = aprPct * level.simpleEarnMultiplier;
+  const valueUsd = amount * assetPriceUsd;
+  const yearUsd = (valueUsd * effectiveAprPct) / 100;
+  const periods = {};
+  for (const [name, days] of PERIODS) {
+    const usdValue = (yearUsd * days) / 365;
+    periods[name] = { usd: round(usdValue, 4), btc: round(usdValue / btcPriceUsd, 8), sats: Math.round(toSats(usdValue, btcPriceUsd)) };
+  }
+  return { vipLevel: level.name, multiplier: level.simpleEarnMultiplier, baseAprPct: aprPct, effectiveAprPct: round(effectiveAprPct, 3), valueUsd: round(valueUsd, 2), periods };
+}
 export const SERVICE_BUTTON_PCT = 3;
 
 export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHeld = 0, gominingUsd, vipLevel, vipPct = 0, serviceButton = false, kwhPriceUsd }) {
@@ -441,7 +518,7 @@ export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHe
   const price = gominingUsd > 0 ? gominingUsd : null;
   const coverageDays = price && dailyUsd > 0 ? Math.floor((held * price) / dailyUsd) : 0;
   const tokenPct = Math.min(Math.floor(coverageDays / TOKEN_DISCOUNT.daysPerPct), TOKEN_DISCOUNT.maxPct);
-  const level = VIP_LEVELS.find((row) => row.name.toLowerCase() === String(vipLevel ?? '').toLowerCase());
+  const level = findVip(vipLevel);
   const vip = level ? level.discountPct : Math.min(Math.max(Number(vipPct) || 0, 0), 6);
   const buttonPct = serviceButton ? SERVICE_BUTTON_PCT : 0;
   const tokensForDays = (days) => (price ? Math.ceil((days * dailyUsd) / price) : null);

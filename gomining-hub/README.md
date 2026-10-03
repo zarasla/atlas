@@ -6,6 +6,8 @@ A GoMining dashboard and an MCP server for Claude, built on one shared data laye
 - **HONKSQUAD in Miner Wars**: the clan's live league, rank and zone (promotion, safe, relegation), blocks won, TH, the league prize fund and the clan's estimated BTC this cycle, the clans around it, the member list by blocks and TH, and a Miner Wars vs plain mining comparison for any member.
 - **Outlook**: break-even BTC price per W/TH, what the next difficulty adjustment does to your sats per TH, the halving countdown and the crypto Fear & Greed index.
 - **Discount builder**: GoMining's maintenance discount from its three parts (GOMINING balance coverage up to 20%, VIP level up to 6%, Service Button 3%), how much GOMINING the next step needs, and maintenance cost in GOMINING.
+- **VIP level and Simple Earn**: your VIP level from the best of three paths (TH, locked veGOMINING, referral activity over 180 days), its perks and what the next level needs; Simple Earn BTC rewards at the base APR times your VIP multiplier.
+- **Layout**: grouped into Today, Calculators, HONKSQUAD, Market & miners and History, with a sticky section menu.
 - **MCP server**: the same data as tools Claude can call, plus a passthrough for your own GoMining account endpoints.
 
 ![The Goose's mining dashboard](docs/dashboard.png)
@@ -118,6 +120,7 @@ claude mcp add gomining -e GOMINING_TOKEN=your-token -- node /path/to/atlas/gomi
 | `gomining_network_stats` | Bitcoin network stats and BTC/GOMINING prices |
 | `gomining_outlook` | Break-even BTC price per W/TH, next difficulty adjustment impact, halving countdown, Fear & Greed |
 | `gomining_maintenance_discount` | Discount from GOMINING balance, VIP level and Service Button, and the GOMINING needed for the next step |
+| `gomining_vip` | VIP level from TH, veGOMINING or referrals, its perks, the next level, and optional Simple Earn rewards |
 | `gomining_clan_miner_wars` | HONKSQUAD's Miner Wars league, rank, blocks, BTC estimate, members; optional Miner Wars vs plain mining |
 | `gomining_payout_history` | Recorded payout days |
 | `gomining_api_request` | Any `https://api.gomining.com/api/...` endpoint, with your token |

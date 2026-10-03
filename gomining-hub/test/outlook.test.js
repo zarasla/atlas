@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { VIP_LEVELS, breakEvenBtcPrice, difficultyImpact, halving, maintenanceDiscount, minerWarsCycle, minerWarsVsSolo, normalizeIncome, rewardsBreakdown } from '../src/core/calc.js';
+import { VIP_LEVELS, breakEvenBtcPrice, simpleEarn, vipStatus, difficultyImpact, halving, maintenanceDiscount, minerWarsCycle, minerWarsVsSolo, normalizeIncome, rewardsBreakdown } from '../src/core/calc.js';
 import { GoMiningClient } from '../src/core/client.js';
 import { ExternalService } from '../src/core/external.js';
 import { MarketService } from '../src/core/market.js';
@@ -187,4 +187,26 @@ test('MCP: clan Miner Wars, outlook and discount tools', async () => {
   assert.equal(outlook.breakEven.rows[3].efficiencyWth, 15);
   const discount = await call('gomining_maintenance_discount', { powerTh: 16, efficiencyWth: 15, gominingHeld: 1e6, vipPct: 6, serviceButton: true });
   assert.equal(discount.totalPct, 29);
+});
+
+test('VIP level from the best of three paths, and what the next level needs', () => {
+  const s = vipStatus({ powerTh: 1200, veGomining: 3000 });
+  assert.equal(s.level.name, 'Platinum II');
+  assert.deepEqual(s.reachedBy, ['th']);
+  assert.equal(s.byPath.veGomining, 'Gold II');
+  assert.equal(s.next.level.name, 'Platinum III');
+  assert.deepEqual(s.next.needs, { th: 1300, veGomining: 22000, referralUsd: 250000 });
+  assert.equal(s.next.gains.discountPct, 0.3);
+  assert.equal(vipStatus({ referralUsd: 600000 }).level.name, 'Diamond I');
+  assert.equal(vipStatus({ powerTh: 2e6 }).next, null);
+  assert.equal(vipStatus().level.name, 'Bronze I');
+});
+
+test('Simple Earn: base APR times the VIP multiplier, paid in BTC', () => {
+  const r = simpleEarn({ amount: 1000, assetPriceUsd: 1, aprPct: 12.02, vipLevel: 'Platinum II', btcPriceUsd: 80000 });
+  assert.equal(r.multiplier, 1.22);
+  assert.equal(r.effectiveAprPct, 14.664);
+  assert.equal(r.periods.year.usd, 146.644);
+  assert.equal(r.periods.year.sats, 183305);
+  assert.throws(() => simpleEarn({ amount: 1, aprPct: 1, btcPriceUsd: 1 }), /price/);
 });

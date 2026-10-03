@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { VIP_LEVELS, breakEvenBtcPrice, calculateEarnings, dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, maintenanceDiscount, minerRoi, minerWarsVsSolo, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
+import { SIMPLE_EARN_ASSETS, VIP_LEVELS, breakEvenBtcPrice, simpleEarn, vipStatus, calculateEarnings, dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, maintenanceDiscount, minerRoi, minerWarsVsSolo, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
 import { GoMiningError } from '../core/client.js';
 
 const MAX_RESPONSE_CHARS = 60_000;
@@ -163,6 +163,28 @@ export function createServer({ client, market, minerWars, allowWrites = false })
     const gominingUsd = data.prices?.gomining?.usd;
     if (!gominingUsd) throw new Error('The GOMINING price is unavailable right now, so the token part cannot be worked out');
     return { ...maintenanceDiscount(data.income, { ...args, gominingUsd }), gominingUsd };
+  }));
+
+  server.registerTool('gomining_vip', {
+    title: 'VIP level and Simple Earn',
+    description: 'GoMining VIP level from any one of three paths (mining power TH, locked veGOMINING, referral activity in USD over 180 days), its perks (maintenance discount, Simple Earn multiplier, reinvest bonus, referral royalty) and what the next level needs. Optionally estimates Simple Earn BTC rewards for an amount of BTC, USDT, USDC or BNB.',
+    inputSchema: {
+      powerTh: z.number().min(0).optional().describe('Own mining power in TH'),
+      veGomining: z.number().min(0).optional().describe('Locked veGOMINING'),
+      referralUsd: z.number().min(0).optional().describe('Referral activity over the last 180 days, USD'),
+      earnAsset: z.enum(Object.keys(SIMPLE_EARN_ASSETS)).optional().describe('Simple Earn asset'),
+      earnAmount: z.number().positive().optional().describe('Amount of that asset in Simple Earn'),
+      earnAprPct: z.number().min(0).optional().describe('Base APR % (defaults to a recent typical rate; check the app)'),
+      earnAssetPriceUsd: z.number().positive().optional().describe('Asset price in USD (needed for BNB)'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ powerTh, veGomining, referralUsd, earnAsset, earnAmount, earnAprPct, earnAssetPriceUsd }) => {
+    const status = vipStatus({ powerTh, veGomining, referralUsd });
+    if (!earnAsset || !earnAmount) return { ...status, levels: VIP_LEVELS };
+    const data = await market.get();
+    const btcPriceUsd = data.prices?.btc?.usd ?? data.income.btcPriceUsd;
+    const assetPriceUsd = earnAssetPriceUsd ?? (earnAsset === 'BTC' ? btcPriceUsd : earnAsset === 'BNB' ? undefined : 1);
+    return { ...status, simpleEarn: simpleEarn({ amount: earnAmount, assetPriceUsd, aprPct: earnAprPct ?? SIMPLE_EARN_ASSETS[earnAsset], vipLevel: status.level.name, btcPriceUsd }) };
   }));
 
   server.registerTool('gomining_clan_miner_wars', {

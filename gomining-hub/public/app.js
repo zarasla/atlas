@@ -1,5 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
-import { VIP_LEVELS, atBtcPrice, findListedPrice, investmentPlan, listedPricePerTh, maintenanceDiscount, minerWarsCycle, minerWarsVsSolo, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
+import { SIMPLE_EARN_ASSETS, VIP_LEVELS, atBtcPrice, simpleEarn, vipStatus, findListedPrice, investmentPlan, listedPricePerTh, maintenanceDiscount, minerWarsCycle, minerWarsVsSolo, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -513,6 +513,71 @@ function renderBuilder() {
   }
 }
 
+// ---------- VIP level and Simple Earn ----------
+const big = (n) => (n >= 1e6 ? `${num(n / 1e6, n % 1e6 ? 1 : 0)}M` : n >= 1e3 ? `${num(n / 1e3, n % 1e3 ? 1 : 0)}K` : num(n, 0));
+
+function renderVip({ sync = false } = {}) {
+  const f = $('vip-form').elements;
+  const status = vipStatus({ powerTh: Number(f.powerTh.value), veGomining: Number(f.veGomining.value), referralUsd: Number(f.referralUsd.value) });
+  const lvl = status.level;
+  const head = el('div', 'vip-head');
+  head.append(el('span', 'vip-name', lvl.name), el('span', 'card-sub', status.reachedBy.length ? `reached by ${status.reachedBy.map((k) => ({ th: 'mining power', veGomining: 'veGOMINING', referralUsd: 'referrals' })[k]).join(' and ')}` : 'the starting level'));
+  const perks = el('p', 'vip-perks');
+  const perk = (label, value) => { const span = el('span'); span.append(`${label} `, bold(value)); return span; };
+  perks.append(perk('Maintenance discount', `${num(lvl.discountPct, 1)}%`), perk('Simple Earn', `×${lvl.simpleEarnMultiplier}`), perk('Reinvest bonus', lvl.reinvestBonusPct ? `+${lvl.reinvestBonusPct}% TH` : '—'), perk('Referral royalty', `${lvl.royaltyPct}%`));
+  const nodes = [head, perks];
+  if (status.next) {
+    const n = status.next;
+    const box = el('div', 'vip-next');
+    const title = el('span');
+    title.append('Next: ', el('strong', '', n.level.name), ' — any one of:');
+    const needs = el('span');
+    needs.append(bold(`+${big(n.needs.th)} TH`), ' or ', bold(`+${big(n.needs.veGomining)} veGOMINING`), ' or ', bold(`+$${big(n.needs.referralUsd)} referrals`));
+    const gains = el('span');
+    const g = n.gains;
+    const parts = [g.discountPct ? `+${num(g.discountPct, 1)}% discount` : null, g.simpleEarnMultiplier ? `Simple Earn ×${n.level.simpleEarnMultiplier}` : null, g.reinvestBonusPct ? `reinvest bonus +${n.level.reinvestBonusPct}%` : null, g.royaltyPct ? `royalty ${n.level.royaltyPct}%` : null].filter(Boolean);
+    gains.textContent = `Gives you ${parts.join(', ')}.`;
+    box.append(title, needs, gains);
+    nodes.push(box);
+  } else {
+    nodes.push(el('p', 'vip-next', 'Elite is the top level.'));
+  }
+  $('vip-out').replaceChildren(...nodes);
+  table($('vip-table'), ['Level', 'TH', 'veGOMINING', 'Referrals', 'Discount', 'Simple Earn', 'Reinvest', 'Royalty'],
+    VIP_LEVELS.map((r) => [r.name, big(r.th), big(r.veGomining), `$${big(r.referralUsd)}`, `${num(r.discountPct, 1)}%`, `×${r.simpleEarnMultiplier}`, r.reinvestBonusPct ? `+${r.reinvestBonusPct}%` : '—', `${r.royaltyPct}%`]),
+    { highlight: (i) => VIP_LEVELS[i] === lvl });
+  // Editing the VIP card carries the level into the discount builder and Simple Earn.
+  if (sync) {
+    $('db-vip').value = lvl.name;
+    $('se-vip').value = lvl.name;
+    store.set('dbVip', lvl.name);
+    renderBuilder();
+    renderEarn();
+  }
+}
+
+function renderEarn() {
+  const f = $('se-form').elements;
+  const out = $('se-out');
+  const btcUsd = state.ticker?.btc?.priceUsd ?? state.market?.prices?.btc?.usd ?? state.market?.income?.btcPriceUsd;
+  const asset = f.asset.value;
+  const assetPriceUsd = asset === 'BTC' ? btcUsd : asset === 'BNB' ? state.ticker?.coins?.find((c) => c.symbol === 'BNB')?.priceUsd : 1;
+  try {
+    const r = simpleEarn({ amount: Number(f.amount.value), assetPriceUsd, aprPct: Number(f.aprPct.value), vipLevel: f.vipLevel.value, btcPriceUsd: btcUsd });
+    const head = el('div', 'se-head');
+    const col = (label, value, sub) => { const box = el('div'); box.append(el('p', 'eyebrow', label), el('p', 'calc-big', value), el('p', 'calc-sub', sub)); return box; };
+    head.append(
+      col('Your APR', `${num(r.effectiveAprPct, 2)}%`, `${num(r.baseAprPct, 2)}% × ${r.multiplier} (${r.vipLevel})`),
+      col('Per month', `${num(r.periods.month.sats)} sats`, `≈ ${usdSmart(r.periods.month.usd)} on ${usdSmart(r.valueUsd)}`),
+    );
+    const wrap = el('div', 'table-wrap');
+    out.replaceChildren(head, wrap);
+    table(wrap, ['Period', 'BTC', 'Sats', 'USD'], Object.entries(r.periods).map(([k, p]) => [PERIOD_LABELS[k], num(p.btc, 8), num(p.sats), usdSmart(p.usd)]));
+  } catch (error) {
+    out.replaceChildren(el('p', 'fine', error.message));
+  }
+}
+
 // ---------- HONKSQUAD in Miner Wars ----------
 const btcFmt = (value) => `${num(value, value < 0.01 ? 6 : 4)} BTC`;
 const ZONE_LABEL = { promotion: 'Promotion', safe: 'Safe', relegation: 'Relegation' };
@@ -672,6 +737,7 @@ function renderAll() {
   renderNetwork();
   renderOutlook();
   renderBuilder();
+  renderEarn();
   renderVs();
   renderRoi();
   renderPrices();
@@ -816,7 +882,16 @@ $('gc-form').addEventListener('input', () => {
   state.gcTimer = setTimeout(() => { renderCalculator(); renderAdvisor(); renderBuilder(); renderNetwork(); }, 120);
 });
 $('db-vip').replaceChildren(...VIP_LEVELS.map((row) => new Option(`${row.name} · ${num(row.discountPct, 1)}%`, row.name)));
-$('db-vip').value = VIP_LEVELS.some((row) => row.name === store.get('dbVip')) ? store.get('dbVip') : 'Bronze I';
+$('se-vip').replaceChildren(...VIP_LEVELS.map((row) => new Option(`${row.name} · ×${row.simpleEarnMultiplier}`, row.name)));
+$('db-vip').value = $('se-vip').value = VIP_LEVELS.some((row) => row.name === store.get('dbVip')) ? store.get('dbVip') : 'Bronze I';
+$('vip-form').addEventListener('input', () => renderVip({ sync: true }));
+$('vip-form').addEventListener('submit', (event) => event.preventDefault());
+$('se-form').addEventListener('input', (event) => {
+  if (event.target.name === 'asset') $('se-form').elements.aprPct.value = String(SIMPLE_EARN_ASSETS[event.target.value]);
+  renderEarn();
+});
+$('se-form').addEventListener('submit', (event) => event.preventDefault());
+renderVip();
 $('db-form').addEventListener('input', renderBuilder);
 $('db-form').addEventListener('submit', (event) => event.preventDefault());
 $('db-apply').addEventListener('click', () => {
@@ -1031,6 +1106,8 @@ function tickerItem(coin) {
 async function loadTicker() {
   try {
     const data = await getJson('/api/ticker');
+    state.ticker = data;
+    renderEarn();
     $('tk-btc').textContent = data.btc ? coinPrice(data.btc.priceUsd) : '—';
     changeSpan($('tk-btc-ch'), data.btc?.change24hPct);
     $('tk-gmt').textContent = data.gomining ? coinPrice(data.gomining.priceUsd) : '—';
@@ -1093,6 +1170,21 @@ new ResizeObserver(([entry]) => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderAll, 120);
 }).observe($('main'));
+
+// The section menu sticks just under the header, whose height changes with the screen width.
+const setTopHeight = () => document.documentElement.style.setProperty('--top-h', `${document.querySelector('.top').offsetHeight}px`);
+setTopHeight();
+window.addEventListener('resize', setTopHeight);
+const jumpLinks = [...document.querySelectorAll('#jump a')];
+const jumpTargets = jumpLinks.map((a) => document.querySelector(a.getAttribute('href')));
+const markCurrent = () => {
+  const line = document.querySelector('.top').offsetHeight + 80;
+  let current = 0;
+  jumpTargets.forEach((target, i) => { if (target && target.getBoundingClientRect().top <= line) current = i; });
+  jumpLinks.forEach((a, i) => a.setAttribute('aria-current', String(i === current)));
+};
+window.addEventListener('scroll', () => requestAnimationFrame(markCurrent), { passive: true });
+markCurrent();
 
 applySharedLink();
 setMode(state.gcMode);
