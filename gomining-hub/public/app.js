@@ -716,6 +716,20 @@ $('efficiency').addEventListener('change', (event) => {
 
 $('refresh').addEventListener('click', () => load({ refresh: true }));
 
+// Feed the Goose: copy the full donation address.
+$('donate-copy').addEventListener('click', async () => {
+  const button = $('donate-copy');
+  const address = button.dataset.address;
+  try {
+    await navigator.clipboard.writeText(address);
+    button.textContent = 'Copied!';
+  } catch {
+    window.prompt('Copy the bitcoin address:', address);
+  }
+  button.classList.add('copied');
+  setTimeout(() => { button.textContent = 'Copy'; button.classList.remove('copied'); }, 2000);
+});
+
 document.querySelectorAll('[data-table-toggle]').forEach((button) => {
   button.setAttribute('aria-pressed', 'false');
   button.addEventListener('click', () => {
