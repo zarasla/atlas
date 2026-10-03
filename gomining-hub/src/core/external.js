@@ -16,9 +16,44 @@ const TOKEN_IDS = ['gomining-token', 'gmt-token'];
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 const round = (value, digits) => (isNumber(value) ? Number(value.toFixed(digits)) : null);
 
+// How long each answer is reused, so the ticker, the dashboard and the MCP tools together make at
+// most one call per source per period (CoinGecko's free API answers HTTP 429 when asked too often).
+const TTL_MS = { network: 60_000, prices: 90_000, topCoins: 90_000, sentiment: 30 * 60_000 };
+// After a failure, wait this long before asking again, and keep serving the last good answer
+// (marked stale) for up to MAX_STALE_MS.
+const RETRY_AFTER_MS = 60_000;
+const MAX_STALE_MS = 6 * 60 * 60_000;
+
 export class ExternalService {
-  constructor({ fetchImpl = globalThis.fetch } = {}) {
+  constructor({ fetchImpl = globalThis.fetch, now = Date.now, cache = true } = {}) {
     this.fetch = fetchImpl;
+    this.now = now;
+    this.useCache = cache;
+    this.memo = new Map();
+  }
+
+  // Shared cache with stale fallback. A stale value gets `stale: true` and `asOf` (when it was fetched).
+  async cached(key, ttlMs, load) {
+    if (!this.useCache) return load();
+    const entry = this.memo.get(key) ?? {};
+    const now = this.now();
+    if (entry.value && now - entry.at < ttlMs) return entry.value;
+    if (entry.errorAt && now - entry.errorAt < RETRY_AFTER_MS) return this.fallback(entry);
+    entry.inflight ??= load()
+      .then((value) => { Object.assign(entry, { value, at: this.now(), good: value, goodAt: this.now(), error: null, errorAt: null }); })
+      .catch((error) => { Object.assign(entry, { value: null, error, errorAt: this.now() }); })
+      .finally(() => { entry.inflight = null; });
+    this.memo.set(key, entry);
+    await entry.inflight;
+    return entry.value ?? this.fallback(entry);
+  }
+
+  fallback(entry) {
+    if (entry.good && this.now() - entry.goodAt < MAX_STALE_MS) {
+      const asOf = new Date(entry.goodAt).toISOString();
+      return Array.isArray(entry.good) ? Object.assign([...entry.good], { stale: true, asOf }) : { ...entry.good, stale: true, asOf };
+    }
+    throw entry.error;
   }
 
   async json(url) {
@@ -32,7 +67,23 @@ export class ExternalService {
     }
   }
 
-  async network() {
+  network() {
+    return this.cached('network', TTL_MS.network, () => this.loadNetwork());
+  }
+
+  prices() {
+    return this.cached('prices', TTL_MS.prices, () => this.loadPrices());
+  }
+
+  topCoins(limit = 50) {
+    return this.cached(`topCoins:${limit}`, TTL_MS.topCoins, () => this.loadTopCoins(limit));
+  }
+
+  sentiment() {
+    return this.cached('sentiment', TTL_MS.sentiment, () => this.loadSentiment());
+  }
+
+  async loadNetwork() {
     const [adjustment, hashrate, height, fees] = await Promise.all([
       this.json(`${MEMPOOL}/v1/difficulty-adjustment`),
       this.json(`${MEMPOOL}/v1/mining/hashrate/3d`),
@@ -61,7 +112,7 @@ export class ExternalService {
     };
   }
 
-  async prices() {
+  async loadPrices() {
     const ids = ['bitcoin', ...TOKEN_IDS].join(',');
     const data = await this.json(`${COINGECKO}/simple/price?ids=${ids}&vs_currencies=usd,eur&include_24hr_change=true&include_market_cap=true`);
     const pick = (row) => (row && isNumber(row.usd) ? {
@@ -77,7 +128,7 @@ export class ExternalService {
   }
 
   // Top coins by market cap for the ticker bar: symbol, name, price and 24h change.
-  async topCoins(limit = 50) {
+  async loadTopCoins(limit) {
     const rows = await this.json(`${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${limit}&page=1&price_change_percentage=24h`);
     if (!Array.isArray(rows)) throw new Error('CoinGecko markets data is malformed');
     return rows
@@ -92,7 +143,7 @@ export class ExternalService {
   }
 
   // Fear & Greed index, 0 (extreme fear) to 100 (extreme greed), newest first from alternative.me.
-  async sentiment() {
+  async loadSentiment() {
     const data = await this.json(FEAR_GREED);
     const rows = Array.isArray(data?.data) ? data.data : [];
     const pick = (row) => {

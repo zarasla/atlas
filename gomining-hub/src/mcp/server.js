@@ -161,8 +161,11 @@ export function createServer({ client, market, minerWars, allowWrites = false })
   }, tool(async (args) => {
     const data = await market.get();
     const gominingUsd = data.prices?.gomining?.usd;
-    if (!gominingUsd) throw new Error('The GOMINING price is unavailable right now, so the token part cannot be worked out');
-    return { ...maintenanceDiscount(data.income, { ...args, gominingUsd }), gominingUsd };
+    return {
+      ...maintenanceDiscount(data.income, { ...args, gominingUsd }),
+      gominingUsd: gominingUsd ?? null,
+      ...(gominingUsd ? {} : { note: 'The GOMINING price is unavailable right now, so the GOMINING part counts as 0%; VIP and Service Button are included' }),
+    };
   }));
 
   server.registerTool('gomining_vip', {

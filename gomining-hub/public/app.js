@@ -483,10 +483,10 @@ function renderBuilder() {
   if (!state.market) return;
   const f = $('db-form').elements;
   const v = formValues();
-  const gmt = state.market.prices?.gomining?.usd;
+  // The ticker's price is a fallback when the market reading has none.
+  const gmt = state.market.prices?.gomining?.usd ?? state.ticker?.gomining?.priceUsd;
   try {
     if (!(v.powerTh > 0) || !(v.efficiencyWth > 0)) throw new Error('Enter your power and efficiency in the calculator above.');
-    if (!gmt) throw new Error('The GOMINING price is unavailable right now, so the token part can\'t be worked out.');
     const d = maintenanceDiscount(state.market.income, {
       powerTh: v.powerTh, efficiencyWth: v.efficiencyWth, kwhPriceUsd: v.kwhPriceUsd, gominingUsd: gmt,
       gominingHeld: Number(f.gominingHeld.value) || 0, vipLevel: f.vipLevel.value, serviceButton: f.serviceButton.checked,
@@ -498,9 +498,13 @@ function renderBuilder() {
     const parts = el('span');
     parts.append('= ', bold(`${d.tokenPct}%`), ' GOMINING + ', bold(`${num(d.vipPct, 1)}%`), ' VIP + ', bold(`${d.serviceButtonPct}%`), ' Service Button');
     const cover = el('span');
-    cover.append('Your GOMINING covers ', bold(`${num(d.coverageDays)} days`), ` of maintenance (${usdSmart(d.dailyMaintenanceUsd)}/day at ${usd(gmt, 4)} per GOMINING).`);
     const next = el('span');
-    if (d.next) next.append('Next step (', bold(`${d.next.pct}%`), '): hold ', bold(`${num(d.next.gominingNeeded)} GOMINING`), '. Full 20%: ', bold(`${num(d.gominingForMax)} GOMINING`), '.');
+    if (!gmt) {
+      cover.append('The GOMINING price is unavailable for a moment, so the GOMINING part counts as 0% until it\'s back. VIP and Service Button are included.');
+    } else {
+      cover.append('Your GOMINING covers ', bold(`${num(d.coverageDays)} days`), ` of maintenance (${usdSmart(d.dailyMaintenanceUsd)}/day at ${usd(gmt, 4)} per GOMINING).`);
+    }
+    if (!gmt) { /* nothing to suggest without a price */ } else if (d.next) next.append('Next step (', bold(`${d.next.pct}%`), '): hold ', bold(`${num(d.next.gominingNeeded)} GOMINING`), '. Full 20%: ', bold(`${num(d.gominingForMax)} GOMINING`), '.');
     else next.append('You have the full 20% GOMINING discount.');
     const bonus = el('span');
     if (d.reinvestBonusPct) bonus.append(`${d.vipLevel} also gives `, bold(`+${d.reinvestBonusPct}% TH`), ' when reinvesting (used in the Investment plan).');

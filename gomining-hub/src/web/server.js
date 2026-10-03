@@ -168,7 +168,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv
   const key = process.env.MCP_ACCESS_KEY?.trim();
   // The MCP tools may use a GoMining token (from the VPS env file); the dashboard never does.
   const mcp = key ? { key, ...fromEnv(process.env), market: dashboard.market, minerWars: dashboard.minerWars } : undefined;
-  const ticker = new TickerService({ external: new ExternalService() });
+  // One ExternalService for the ticker and the dashboard, so they share CoinGecko answers.
+  const ticker = new TickerService({ external: dashboard.market.external ?? new ExternalService() });
   createHttpServer(createApp({ market: dashboard.market, mcp, ticker, minerWars: dashboard.minerWars })).listen(port, host, () => {
     console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     if (key && key.length < MIN_KEY_LENGTH) console.log(`Remote MCP is OFF: MCP_ACCESS_KEY must be at least ${MIN_KEY_LENGTH} characters`);

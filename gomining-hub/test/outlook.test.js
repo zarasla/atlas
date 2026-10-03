@@ -210,3 +210,32 @@ test('Simple Earn: base APR times the VIP multiplier, paid in BTC', () => {
   assert.equal(r.periods.year.sats, 183305);
   assert.throws(() => simpleEarn({ amount: 1, aprPct: 1, btcPriceUsd: 1 }), /price/);
 });
+
+test('maintenance discount still counts VIP and Service Button without a GOMINING price', () => {
+  const d = maintenanceDiscount(market, { powerTh: 16, efficiencyWth: 15, gominingHeld: 2000, vipLevel: 'Platinum I', serviceButton: true });
+  assert.equal(d.tokenPct, 0);
+  assert.equal(d.totalPct, 5.1);
+  assert.equal(d.gominingForMax, null);
+});
+
+test('external answers are shared for a while, and the last good one is kept when CoinGecko throttles', async () => {
+  let clock = 0;
+  let throttled = false;
+  const api = fakeFetch({ 'GET /api/v3/simple/price': () => (throttled ? new Response('{}', { status: 429 }) : new Response(JSON.stringify({ bitcoin: { usd: 80500 }, 'gomining-token': { usd: 0.42 } }), { status: 200 })) });
+  const external = new ExternalService({ fetchImpl: api.fetchImpl, now: () => clock });
+  const count = () => api.calls.filter((c) => c.url.includes('simple/price')).length;
+  await external.prices();
+  await external.prices();
+  assert.equal(count(), 1);
+  clock = 100_000;
+  throttled = true;
+  const stale = await external.prices();
+  assert.equal(stale.stale, true);
+  assert.equal(stale.gomining.usd, 0.42);
+  assert.equal(count(), 2);
+  clock = 120_000; // within the retry pause: no new call
+  await external.prices();
+  assert.equal(count(), 2);
+  clock = 7 * 3_600_000; // too old to serve
+  await assert.rejects(external.prices(), /HTTP 429/);
+});

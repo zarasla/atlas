@@ -79,7 +79,7 @@ export class MarketService {
     if (result.source === 'sample') result.sampleCapturedAt = (await this.snapshot()).capturedAt;
     for (const part of ['network', 'prices', 'sentiment']) {
       result[part] = outside?.[part] ?? null;
-      result.sources[part] = result[part] ? 'live' : 'unavailable';
+      result.sources[part] = !result[part] ? 'unavailable' : result[part].stale ? 'stale' : 'live';
       if (outside?.errors?.[part]) result.errors[part] = outside.errors[part];
     }
     if (result.sources.income === 'live') await this.record(result.income, result).catch(() => {});
