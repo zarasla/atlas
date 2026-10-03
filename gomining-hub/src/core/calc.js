@@ -788,13 +788,19 @@ export function breakEvenMatrix(market, { btcPrices, discountPct = 0, kwhPriceUs
   return { btcPrices: prices, satsPerThDay: market.rewardSatsPerThDay, discountPct: discount * 100, rows };
 }
 
-// Spend a budget on better efficiency or on more TH? Efficiency upgrades are priced from GoMining's
-// per-step table (each step improves the miner by one W/TH, priced per TH); more TH is priced at
-// `powerPricePerThUsd` (the member's power-upgrade price, or a new miner's list price per TH).
-export function upgradeComparison(market, upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct = 0, kwhPriceUsd, powerPricePerThUsd }) {
+// Spend a budget on better efficiency, on more TH, or on both? Efficiency upgrades are priced from
+// GoMining's per-step table (each step improves the miner by one W/TH, priced per TH). More TH is
+// either a power upgrade on this miner at `powerPricePerThUsd` (the price the member's app shows; the
+// new TH get the miner's efficiency, including any upgrade bought with it) or, without that price,
+// a new GoMining miner at its list price (`newMiner`: { efficiencyWth, pricePerThUsd }).
+// `combos` tries every efficiency level the budget reaches with the rest spent on TH, and `best` is
+// the mix with the highest daily gain. Gains are at today's payout and fees: the next halving halves
+// what a TH earns in BTC, while electricity saved by a better W/TH is paid in USD and doesn't halve.
+export function upgradeComparison(market, upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct = 0, kwhPriceUsd, powerPricePerThUsd, newMiner }) {
   if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
   const discount = clampPct(discountPct);
   const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const netAt = (wth) => rewardsBreakdown(market, { powerTh: 1, efficiencyWth: wth, discountPct: discount * 100, kwhPriceUsd }).periods.day.netUsd;
   const steps = upgrades?.efficiencyUpgradeSteps ?? [];
   const stepPrice = (toLevel) => steps.find((step) => step.toLevelWth === toLevel)?.priceUsdPerTh ?? null;
   const efficiency = [];
@@ -813,36 +819,132 @@ export function upgradeComparison(market, upgrades, { powerTh, efficiencyWth, bu
       affordable: budgetUsd > 0 ? costUsd <= budgetUsd : null,
     });
   }
-  const netPerThDay = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct: discount * 100, kwhPriceUsd }).periods.day.netUsd;
+  // Where extra TH come from, and the efficiency they mine at.
+  const source = powerPricePerThUsd > 0 ? { kind: 'upgrade', pricePerThUsd: powerPricePerThUsd }
+    : newMiner?.pricePerThUsd > 0 && newMiner?.efficiencyWth > 0 ? { kind: 'newMiner', pricePerThUsd: newMiner.pricePerThUsd, efficiencyWth: newMiner.efficiencyWth }
+    : null;
+  const extraAt = (minerWth) => (source?.kind === 'newMiner' ? source.efficiencyWth : minerWth);
+  const netPerThDay = netAt(efficiencyWth);
   let power = null;
-  if (powerPricePerThUsd > 0 && budgetUsd > 0) {
-    const addedTh = budgetUsd / powerPricePerThUsd;
-    const gainUsdDay = addedTh * netPerThDay;
-    power = { pricePerThUsd: powerPricePerThUsd, addedTh: round(addedTh, 3), costUsd: round(budgetUsd, 2), gainUsdDay: round(gainUsdDay, 4), paybackDays: gainUsdDay > 0 ? Math.ceil(budgetUsd / gainUsdDay) : null };
+  if (source && budgetUsd > 0) {
+    const addedTh = budgetUsd / source.pricePerThUsd;
+    const gainUsdDay = addedTh * netAt(extraAt(efficiencyWth));
+    power = { source: source.kind, pricePerThUsd: source.pricePerThUsd, efficiencyWth: extraAt(efficiencyWth), addedTh: round(addedTh, 3), costUsd: round(budgetUsd, 2), gainUsdDay: round(gainUsdDay, 4), paybackDays: gainUsdDay > 0 ? Math.ceil(budgetUsd / gainUsdDay) : null };
   }
-  // Best use of the budget: the deepest efficiency upgrade it pays for, against the TH it buys,
-  // compared by daily gain per dollar spent.
+  // Every mix: upgrade to a level the budget reaches (or not at all), spend the rest on TH.
+  const combos = [];
+  if (budgetUsd > 0) {
+    for (const level of [null, ...efficiency.filter((row) => row.affordable)]) {
+      const upgradeCost = level?.costUsd ?? 0;
+      const rest = Math.max(budgetUsd - upgradeCost, 0);
+      const addedTh = source ? rest / source.pricePerThUsd : 0;
+      const minerWth = level?.toWth ?? efficiencyWth;
+      const thGain = addedTh * netAt(extraAt(minerWth));
+      const gainUsdDay = (level?.gainUsdDay ?? 0) + thGain;
+      const spent = upgradeCost + (source ? rest : 0);
+      combos.push({
+        toWth: level?.toWth ?? null,
+        upgradeUsd: round(upgradeCost, 2),
+        addedTh: round(addedTh, 3),
+        thUsd: round(source ? rest : 0, 2),
+        gainUsdDay: round(gainUsdDay, 4),
+        gainUsdYear: round(gainUsdDay * 365, 2),
+        paybackDays: gainUsdDay > 0 && spent > 0 ? Math.ceil(spent / gainUsdDay) : null,
+      });
+    }
+  }
+  const best = combos.filter((row) => row.upgradeUsd > 0 || row.addedTh > 0).sort((a, b) => b.gainUsdDay - a.gainUsdDay)[0] ?? null;
   const bestEfficiency = efficiency.filter((row) => row.affordable).at(-1) ?? null;
-  const perDollar = (row) => (row && row.costUsd > 0 ? row.gainUsdDay / row.costUsd : -Infinity);
-  const verdict = !power && !bestEfficiency ? null : perDollar(bestEfficiency) >= perDollar(power) ? 'efficiency' : 'power';
-  return { netPerThDayUsd: round(netPerThDay, 6), efficiency, power, bestEfficiency, verdict };
+  const verdict = !best ? null : best.toWth === null ? 'power' : best.addedTh > 0 ? 'split' : 'efficiency';
+  return { netPerThDayUsd: round(netPerThDay, 6), efficiency, power, combos, best, bestEfficiency, verdict };
 }
 
-// The same money in Simple Earn (APR x VIP multiplier, capital stays yours) or in new TH at a price
-// per TH (net mining reward at today's rates; the miner is kept and could be sold, but its resale
-// price can't be predicted, so it isn't counted).
-export function simpleEarnVsMining(market, { capitalUsd, aprPct, vipLevel, efficiencyWth, pricePerThUsd, discountPct = 0, kwhPriceUsd }) {
+// Simple Earn or mining, day by day over `days`, for three ways of using the same money:
+//   simpleEarn  keep it in Simple Earn: every 4-hour cycle pays APR x VIP multiplier / (365 x 6) in
+//               BTC; with `btcAprPct`, the BTC rewards also earn Simple Earn's BTC rate (GoMining's
+//               Simple Earn covers the BTC balance too), otherwise they just accumulate
+//   simpleEarnTh keep it in Simple Earn with rewards paid in TH: 10% more TH, added once a day at
+//               `thPricePerThUsd`, only for cycles of $0.10 or more (smaller ones stay in BTC). The TH
+//               then mine at `thEfficiencyWth` (the receiving miner must be 20 W/TH or better)
+//   mining      buy a new miner at its list price per TH and collect its daily net reward
+// All at today's payout, fees and BTC price (pre-halving); a day's mining net is floored at zero, as
+// GoMining's reward protection does. Capital in Simple Earn stays yours; a miner is kept too, but what
+// it would sell for later can't be predicted, so it isn't counted.
+export function earnVsMinePlan(market, {
+  capitalUsd, aprPct, vipLevel, btcAprPct, miner, thPricePerThUsd, thEfficiencyWth, discountPct = 0, kwhPriceUsd, days = 730,
+}) {
   if (!(capitalUsd > 0)) throw new Error('Enter an amount');
   if (!(aprPct >= 0)) throw new Error('Enter the Simple Earn APR your wallet shows');
-  if (!(pricePerThUsd > 0) || !(efficiencyWth > 0)) throw new Error('A miner price per TH and efficiency are needed');
+  if (!(miner?.pricePerThUsd > 0) || !(miner?.efficiencyWth > 0)) throw new Error('Choose a GoMining miner to compare with');
   const level = findVip(vipLevel) ?? VIP_LEVELS[0];
-  const earnYearUsd = (capitalUsd * aprPct * level.simpleEarnMultiplier) / 100;
-  const th = capitalUsd / pricePerThUsd;
-  const mineDayUsd = th * rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct, kwhPriceUsd }).periods.day.netUsd;
+  const span = Math.min(Math.max(Math.round(days), 1), 3650);
+  const btcPrice = market.btcPriceUsd;
+  const netAt = (wth) => rewardsBreakdown(market, { powerTh: 1, efficiencyWth: wth, discountPct, kwhPriceUsd }).periods.day.netUsd;
+  const sats = (usd) => Math.round(toSats(usd, btcPrice));
+  const btc = (usd) => round(usd / btcPrice, 8);
+
+  const effectiveApr = (aprPct * level.simpleEarnMultiplier) / 100;
+  const cycleUsd = (capitalUsd * effectiveApr) / (365 * SIMPLE_EARN_RULES.cyclesPerDay);
+  const dailyUsd = cycleUsd * SIMPLE_EARN_RULES.cyclesPerDay;
+  const btcRate = btcAprPct > 0 ? (btcAprPct * level.simpleEarnMultiplier) / 100 / 365 : 0;
+  const thOk = cycleUsd >= SIMPLE_EARN_RULES.thMinUsdPerCycle;
+  const thPrice = thPricePerThUsd > 0 ? thPricePerThUsd : miner.pricePerThUsd;
+  const thWth = thEfficiencyWth > 0 ? thEfficiencyWth : miner.efficiencyWth;
+  const thEligible = thWth <= TH_REINVEST_RULES.maxEfficiencyWth;
+  const thNet = Math.max(netAt(thWth), 0);
+  const minerTh = capitalUsd / miner.pricePerThUsd;
+  const minerDay = Math.max(minerTh * netAt(miner.efficiencyWth), 0);
+
+  let seRewards = 0;
+  let thHeld = 0;
+  let thMined = 0;
+  let thPaidBtc = 0;
+  let mined = 0;
+  let minerPayback = null;
+  const months = [];
+  for (let day = 1; day <= span; day++) {
+    seRewards += dailyUsd + seRewards * btcRate;
+    if (thOk && thEligible) {
+      thMined += thHeld * thNet; // the TH already added mine today
+      thHeld += (dailyUsd * (1 + SIMPLE_EARN_RULES.thBonusPct / 100)) / thPrice;
+    } else {
+      // Paid in BTC instead, exactly like plain Simple Earn (compounding at the BTC rate if given).
+      thPaidBtc += dailyUsd + thPaidBtc * btcRate;
+    }
+    mined += minerDay;
+    if (minerPayback === null && mined >= capitalUsd) minerPayback = day;
+    if (day % Math.round(DAYS_PER_MONTH) === 0 || day === span) {
+      months.push({ day, simpleEarnUsd: round(seRewards, 2), simpleEarnThMinedUsd: round(thMined + thPaidBtc, 2), simpleEarnTh: round(thHeld, 3), miningUsd: round(mined, 2) });
+    }
+  }
+  const period = (usdPerDay) => Object.fromEntries(PERIODS.map(([name, n]) => [name, { usd: round(usdPerDay * n, 4), sats: sats(usdPerDay * n) }]));
   return {
-    simpleEarn: { aprPct: round(aprPct * level.simpleEarnMultiplier, 3), yearUsd: round(earnYearUsd, 2), monthUsd: round((earnYearUsd / 365) * DAYS_PER_MONTH, 2), capitalKept: true },
-    mining: { th: round(th, 3), yearUsd: round(mineDayUsd * 365, 2), monthUsd: round(mineDayUsd * DAYS_PER_MONTH, 2), paybackDays: mineDayUsd > 0 ? Math.ceil(capitalUsd / mineDayUsd) : null, returnPct: round(((mineDayUsd * 365) / capitalUsd) * 100, 2) },
-    better: mineDayUsd * 365 > earnYearUsd ? 'mining' : 'simpleEarn',
+    vipLevel: level.name,
+    effectiveAprPct: round(effectiveApr * 100, 3),
+    days: span,
+    // How often each pays and how much per payout, at the start.
+    payouts: {
+      simpleEarn: { everyHours: 24 / SIMPLE_EARN_RULES.cyclesPerDay, perDay: SIMPLE_EARN_RULES.cyclesPerDay, usd: round(cycleUsd, 4), sats: sats(cycleUsd), periods: period(dailyUsd) },
+      mining: { everyHours: 24, perDay: 1, usd: round(minerDay, 4), sats: sats(minerDay), periods: period(minerDay) },
+    },
+    simpleEarnTh: {
+      available: thOk && thEligible,
+      reason: !thEligible ? `TH rewards need a miner of ${TH_REINVEST_RULES.maxEfficiencyWth} W/TH or better` : !thOk ? `each 4-hour cycle earns $${round(cycleUsd, 4)}, under the $${SIMPLE_EARN_RULES.thMinUsdPerCycle.toFixed(2)} minimum for TH rewards, so they are paid in BTC` : null,
+      thPerDay: thOk && thEligible ? round((dailyUsd * (1 + SIMPLE_EARN_RULES.thBonusPct / 100)) / thPrice, 5) : 0,
+      thPriceUsd: round(thPrice, 4),
+      thEfficiencyWth: thWth,
+    },
+    end: {
+      simpleEarn: { capitalUsd: round(capitalUsd, 2), rewardsUsd: round(seRewards, 2), rewardsBtc: btc(seRewards), compounding: btcRate > 0 },
+      simpleEarnTh: { capitalUsd: round(capitalUsd, 2), th: round(thHeld, 3), thAtListPriceUsd: round(thHeld * thPrice, 2), minedUsd: round(thMined, 2), minedBtc: btc(thMined), paidInBtcUsd: round(thPaidBtc, 2) },
+      mining: {
+        th: round(minerTh, 3), efficiencyWth: miner.efficiencyWth, minedUsd: round(mined, 2), minedBtc: btc(mined), paybackDay: minerPayback, capitalSpentUsd: round(capitalUsd, 2),
+        // Simple Earn ends with capital + rewards; the miner beats it only if it is still worth this much.
+        worthAtLeastUsd: round(Math.max(capitalUsd + seRewards - mined, 0), 2),
+        worthAtLeastPerThUsd: round(Math.max(capitalUsd + seRewards - mined, 0) / minerTh, 4),
+      },
+    },
+    months,
   };
 }
 

@@ -238,7 +238,8 @@ test('MCP: Miner Wars, planner, tokenomics, outlook and discount tools', async (
   const planner = await call('gomining_planner', { powerTh: 16, efficiencyWth: 15, budgetUsd: 100, capitalUsd: 1000, simpleEarnAprPct: 9.85 });
   assert.equal(planner.matrix.rows.length, 9);
   assert.equal(planner.upgrade.power.pricePerThUsd, 15.6244, 'defaults to GoMining\'s list price per TH at 15 W/TH');
-  assert.ok(planner.simpleEarnVsMining.simpleEarn.yearUsd > 0);
+  assert.ok(planner.simpleEarnVsMining.end.simpleEarn.rewardsUsd > 0);
+  assert.equal(planner.newMinerUsed.efficiencyWth, 15);
   assert.equal((await call('gomining_platform_stats')).users.mining, 3685674);
   assert.equal((await call('gomining_spells')).spells.length, 2);
   const outlook = await call('gomining_outlook', { powerTh: 16 });

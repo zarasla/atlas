@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   FIXED_MAX_DISCOUNT_PCT, HALVING_NOTE, SIMPLE_EARN_ASSETS, VE_MAX_LOCK_DAYS, VIP_LEVELS, breakEvenBtcPrice, breakEvenMatrix, calculateEarnings, clanFinder,
   dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, listedPricePerTh, maintenanceDiscount, minerRoi, minerWarsVsSolo,
-  payoutVsAverage, pointsPerSecond, simpleEarn, simpleEarnVsMining, upgradeAdvisor, upgradeComparison, veLock, vipStatus,
+  earnVsMinePlan, payoutVsAverage, pointsPerSecond, simpleEarn, upgradeAdvisor, upgradeComparison, veLock, vipStatus,
 } from '../core/calc.js';
 import { GoMiningError } from '../core/client.js';
 
@@ -329,7 +329,7 @@ export function createServer({ client, market, minerWars, platform, allowWrites 
 
   server.registerTool('gomining_planner', {
     title: 'Mining planner',
-    description: 'Planning maths at today\'s GoMining payout and fees: (1) a break-even matrix of net reward per TH per day for each W/TH at several BTC prices; (2) with powerTh and budgetUsd, whether the budget earns more as efficiency upgrades (GoMining\'s per-step prices) or as more TH (at powerPricePerThUsd, default GoMining\'s new-miner list price per TH at that efficiency); (3) with capitalUsd and simpleEarnAprPct, the same money in Simple Earn versus new TH.',
+    description: 'Planning maths at today\'s GoMining payout and fees: (1) a break-even matrix of net reward per TH per day for each W/TH at several BTC prices; (2) with powerTh and budgetUsd, efficiency upgrades (GoMining\'s per-step prices) vs more TH (a power upgrade at powerPricePerThUsd, or else a new GoMining miner at its list price) and the best split of the budget between them; (3) with capitalUsd and simpleEarnAprPct, the same money in Simple Earn (BTC every 4 hours, optionally compounding at the BTC APR), Simple Earn paid in TH (+10% TH, $0.10 per cycle minimum) or a new miner (paid daily) over a horizon, including what the miner would have to be worth by then to beat Simple Earn.',
     inputSchema: {
       btcPrices: z.array(z.number().positive()).max(12).optional().describe('BTC prices for the break-even matrix (default: today and ±25/50%)'),
       discountPct: z.number().min(0).max(100).optional().describe('Total maintenance discount %'),
@@ -339,18 +339,26 @@ export function createServer({ client, market, minerWars, platform, allowWrites 
       powerPricePerThUsd: z.number().positive().optional().describe('What adding a TH costs you (your app\'s power-upgrade price)'),
       capitalUsd: z.number().positive().optional().describe('Amount for Simple Earn vs mining'),
       simpleEarnAprPct: z.number().min(0).optional().describe('Simple Earn base APR % from your wallet'),
+      simpleEarnBtcAprPct: z.number().min(0).optional().describe('Simple Earn BTC APR %, so the BTC rewards compound (optional)'),
       vipLevel: z.enum(VIP_LEVELS.map((row) => row.name)).optional().describe('VIP level for the Simple Earn multiplier'),
+      minerEfficiencyWth: z.number().positive().optional().describe('W/TH of the new GoMining miner to compare with (12 or 15; default: your W/TH if GoMining sells it, else the best value)'),
+      days: z.number().int().min(1).max(3650).optional().describe('Horizon for Simple Earn vs mining, in days (default 730)'),
     },
     annotations: readOnly,
-  }, tool(async ({ btcPrices, discountPct = 0, powerTh, efficiencyWth = 15, budgetUsd, powerPricePerThUsd, capitalUsd, simpleEarnAprPct, vipLevel }) => {
+  }, tool(async ({ btcPrices, discountPct = 0, powerTh, efficiencyWth = 15, budgetUsd, powerPricePerThUsd, capitalUsd, simpleEarnAprPct, simpleEarnBtcAprPct, vipLevel, minerEfficiencyWth, days = 730 }) => {
     const data = await market.get();
     const btc = data.income.btcPriceUsd;
-    const listed = listedPricePerTh(data.presets, Math.round(efficiencyWth));
-    const result = { matrix: breakEvenMatrix(data.income, { btcPrices: btcPrices ?? [0.5, 0.75, 1, 1.25, 1.5, 2].map((k) => Math.round(btc * k)), discountPct }), ...provenance(data, 'income') };
-    if (powerTh && budgetUsd) result.upgrade = upgradeComparison(data.income, data.upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct, powerPricePerThUsd: powerPricePerThUsd ?? listed ?? undefined });
+    // GoMining's new miners, at the efficiencies it sells; the one at your W/TH, else the best value per TH.
+    const miners = [...new Set(data.presets.map((row) => row.efficiencyWth))].map((wth) => ({ efficiencyWth: wth, pricePerThUsd: listedPricePerTh(data.presets, wth) })).filter((m) => m.pricePerThUsd > 0);
+    const netAt = (wth) => dailyBreakdownPerTh(data.income, wth).netUsd;
+    const newMiner = miners.find((m) => m.efficiencyWth === Math.round(minerEfficiencyWth ?? efficiencyWth))
+      ?? [...miners].sort((a, b) => netAt(b.efficiencyWth) / b.pricePerThUsd - netAt(a.efficiencyWth) / a.pricePerThUsd)[0];
+    const result = { matrix: breakEvenMatrix(data.income, { btcPrices: btcPrices ?? [0.5, 0.75, 1, 1.25, 1.5, 2].map((k) => Math.round(btc * k)), discountPct }), newMinerUsed: newMiner ?? null, ...provenance(data, 'income') };
+    if (powerTh && budgetUsd) result.upgrade = upgradeComparison(data.income, data.upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct, powerPricePerThUsd, newMiner });
     if (capitalUsd && simpleEarnAprPct !== undefined) {
-      if (!listed) throw new Error(`GoMining lists no new miners at ${Math.round(efficiencyWth)} W/TH to compare with`);
-      result.simpleEarnVsMining = simpleEarnVsMining(data.income, { capitalUsd, aprPct: simpleEarnAprPct, vipLevel, efficiencyWth, pricePerThUsd: listed, discountPct });
+      if (!newMiner) throw new Error('GoMining lists no new miners to compare with right now');
+      result.simpleEarnVsMining = earnVsMinePlan(data.income, { capitalUsd, aprPct: simpleEarnAprPct, btcAprPct: simpleEarnBtcAprPct, vipLevel, miner: newMiner, discountPct, days });
+      delete result.simpleEarnVsMining.months;
     }
     return result;
   }));

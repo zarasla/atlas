@@ -289,39 +289,55 @@
       <p class="fine">Sats per TH are set by network difficulty, not price, so they stay at today's value and only their USD worth moves; electricity and service stay in USD. Green pays, red costs money. Difficulty usually rises when BTC does, so higher-price columns are optimistic. Pre-halving.</p>
     </section>
 
-    <section class="grid-2">
-      <article class="card" id="uc-card">
-        <header class="card-head">
-          <div>
-            <h2>Better efficiency or more TH?</h2>
-            <p class="card-sub">The same budget spent on W/TH upgrades (GoMining's step prices) or on more power</p>
-          </div>
-        </header>
-        <form id="uc-form" class="pl-form" autocomplete="off">
-          <label class="field"><span>Miner power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="50" inputmode="decimal"></label>
-          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="18" inputmode="decimal"></label>
-          <label class="field"><span>Budget (USD)</span><input name="budgetUsd" type="number" min="0" step="any" value="250" inputmode="decimal"></label>
-          <label class="field"><span>Price per extra TH (USD)</span><input name="powerPricePerThUsd" type="number" min="0" step="any" placeholder="New-miner list price" inputmode="decimal"></label>
-        </form>
-        <div id="uc-out" aria-live="polite"></div>
-        <p class="fine">Efficiency steps are GoMining's live upgrade prices per TH, one W/TH at a time. Extra TH defaults to GoMining's new-miner list price per TH at your efficiency; your app's power-upgrade price for this miner can be lower, so enter it for the exact answer. Uses the discount and electricity rate from the calculator.</p>
-      </article>
+    <section class="card" id="uc-card">
+      <header class="card-head">
+        <div>
+          <h2>Better efficiency or more TH?</h2>
+          <p class="card-sub">The same budget spent on W/TH upgrades (GoMining's step prices), on more power, or split between them</p>
+        </div>
+      </header>
+      <form id="uc-form" class="vs-form" autocomplete="off">
+        <label class="field"><span>Miner power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="50" inputmode="decimal"></label>
+        <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="18" inputmode="decimal"></label>
+        <label class="field"><span>Budget (USD)</span><input name="budgetUsd" type="number" min="0" step="any" value="250" inputmode="decimal"></label>
+        <label class="field"><span>Extra TH from</span><select name="thSource"></select></label>
+        <label class="field" data-uc-price hidden><span>Your power-upgrade price per TH (USD)</span><input name="powerPricePerThUsd" type="number" min="0" step="any" placeholder="From the app's Upgrade → Power screen" inputmode="decimal"></label>
+      </form>
+      <div id="uc-out" aria-live="polite"></div>
+      <div class="uc-grid">
+        <div>
+          <h3 class="mw-h">Every split of the budget</h3>
+          <div class="table-wrap" id="uc-combos"></div>
+        </div>
+        <div>
+          <h3 class="mw-h">Efficiency steps</h3>
+          <div class="table-wrap" id="uc-steps"></div>
+        </div>
+      </div>
+      <p class="fine" id="uc-note"></p>
+    </section>
 
-      <article class="card" id="evm-card">
-        <header class="card-head">
-          <div>
-            <h2>Simple Earn or mining?</h2>
-            <p class="card-sub">The same money in Simple Earn, or in a new GoMining miner</p>
-          </div>
-        </header>
-        <form id="evm-form" class="pl-form" autocomplete="off">
-          <label class="field"><span>Amount (USD)</span><input name="capitalUsd" type="number" min="0" step="any" value="1000" inputmode="decimal"></label>
-          <label class="field"><span>Simple Earn APR (%), from your wallet</span><input name="aprPct" type="number" min="0" step="any" placeholder="e.g. your USDT rate" inputmode="decimal"></label>
-          <label class="field"><span>Miner efficiency</span><select name="efficiencyWth"></select></label>
-        </form>
-        <div id="evm-out" aria-live="polite"></div>
-        <p class="fine">Simple Earn keeps your capital and pays its APR × your VIP multiplier (VIP level from the discount builder). The miner is bought at GoMining's list price per TH and earns today's net reward after your discount; you keep the miner, but what it would sell for later can't be predicted, so it isn't counted. Pre-halving.</p>
-      </article>
+    <section class="card" id="evm-card">
+      <header class="card-head">
+        <div>
+          <h2>Simple Earn or mining?</h2>
+          <p class="card-sub">The same money kept in Simple Earn (paid in BTC every 4 hours, or in TH), or spent on a new GoMining miner (paid once a day)</p>
+        </div>
+      </header>
+      <form id="evm-form" class="evm-form" autocomplete="off">
+        <label class="field"><span>Amount (USD)</span><input name="capitalUsd" type="number" min="0" step="any" value="1000" inputmode="decimal"></label>
+        <label class="field"><span>Simple Earn APR (%), from your wallet</span><input name="aprPct" type="number" min="0" step="any" placeholder="e.g. your USDT rate" inputmode="decimal"></label>
+        <label class="field"><span>BTC APR (%), optional</span><input name="btcAprPct" type="number" min="0" step="any" placeholder="BTC rewards earn it too" inputmode="decimal"></label>
+        <label class="field"><span>VIP level</span><select name="vipLevel"></select></label>
+        <label class="field"><span>Miner to compare</span><select name="efficiencyWth"></select></label>
+        <label class="field"><span>Over</span>
+          <select name="days"><option value="365">1 year</option><option value="730" selected>2 years</option><option value="1095">3 years</option></select>
+        </label>
+      </form>
+      <div id="evm-out" aria-live="polite"></div>
+      <div class="legend" id="evm-legend"></div>
+      <div class="chart" id="evm-chart"></div>
+      <p class="fine" id="evm-note">Simple Earn counts the lowest balance in each full 4-hour cycle (00:00, 04:00, … UTC) and pays in BTC, or in TH with 10% more TH when a cycle earns at least $0.10; the TH are added once a day to a miner of 20 W/TH or better. Your capital stays yours and can be withdrawn any time. The miner is bought at GoMining's list price per TH and pays its net reward once a day after your discount (never below zero, GoMining's reward protection); you keep it, but what it would sell for later can't be predicted, so it isn't counted. All at today's payout, fees and BTC price, before the halving.</p>
     </section>
 
     <div class="group-title" id="g-mw"><h2>Miner Wars</h2><p>Any league and any clan, live from GoMining's public leaderboards</p></div>
