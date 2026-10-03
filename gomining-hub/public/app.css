@@ -236,9 +236,10 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 .ticker-move { display: flex; gap: 24px; padding-left: 16px; width: max-content; animation: ticker-scroll var(--ticker-duration, 80s) linear infinite; }
 .ticker-track:hover .ticker-move { animation-play-state: paused; }
 @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+/* The ticker always rotates like a market board; with reduced motion it just runs at half speed.
+   Hovering pauses it so a price can be read. */
 @media (prefers-reduced-motion: reduce) {
-  .ticker-move { animation: none; }
-  .ticker-track { overflow-x: auto; }
+  .ticker-move { animation-duration: calc(var(--ticker-duration, 80s) * 2); }
 }
 .sym-short { display: none; }
 @media (max-width: 560px) {
