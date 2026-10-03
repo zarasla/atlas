@@ -67,7 +67,9 @@ Results are cached for 5 minutes. The refresh button skips the cache.
 
 **Payout history**: GoMining's API has no history endpoint. Each day the hub fetches a live payout it saves one point to `data/history.json`, keyed by payout date, so the history chart builds up while you use it.
 
-**Estimates**: net = payout − electricity (per W/TH × your W/TH) − service fee, per TH per day, with today's rates held constant. Fee discounts (paying in GOMINING, VIP level, clan and league boosts) and future BTC price or difficulty changes are not included, so the net figure is a conservative baseline.
+**Estimates**: net = payout − electricity (per W/TH × your W/TH) − service fee, per TH per day, with today's rates held constant. The calculators apply the maintenance discount you enter (GOMINING payment, VIP, Service Button, Mining mode: 30.2% at most). Everything is **pre-halving**: the next halving (about April 2028) halves the BTC paid per TH, and BTC's price after it can't be predicted, so it isn't modelled. Future BTC price, difficulty and fee changes aren't either.
+
+**Miner Wars**: the boards are read for the current cycle (league ids: Odyssey 1, Eclipse 3, Horizon 4, Dune I–XXVII 5–31). The clan's BTC is gross. For a member, GoMining takes a full week of maintenance on all their TH out of their share, never below zero, and charges any reward above Mining-mode output at the league's average W/TH and discount; the comparison follows that rule. After a failed fetch the boards aren't asked for again for 10 minutes.
 
 ## Dashboard API
 
@@ -78,7 +80,7 @@ Results are cached for 5 minutes. The refresh button skips the cache.
 | `GET /api/minerwars` | HONKSQUAD's Miner Wars standing, neighbours, board and members |
 | `GET /api/earnings?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]` | Earnings and payback |
 
-The account passthrough is not exposed over HTTP. Only the MCP server, which runs locally inside Claude, can use your token.
+The account passthrough is not exposed over HTTP: neither the dashboard nor the remote MCP connector has it or the token. Only the local MCP server (stdio, inside Claude on your PC) can use your token.
 
 ## Connect the MCP server to Claude
 
@@ -119,11 +121,11 @@ claude mcp add gomining -e GOMINING_TOKEN=your-token -- node /path/to/atlas/gomi
 | `gomining_upgrade_advisor` | Cost vs electricity saved for each W/TH upgrade step |
 | `gomining_network_stats` | Bitcoin network stats and BTC/GOMINING prices |
 | `gomining_outlook` | Break-even BTC price per W/TH, next difficulty adjustment impact, halving countdown, Fear & Greed |
-| `gomining_maintenance_discount` | Discount from GOMINING balance, VIP level and Service Button, and the GOMINING needed for the next step |
+| `gomining_maintenance_discount` | Discount from GOMINING balance, VIP level, Service Button days and Mining mode, and the GOMINING needed for the next step |
 | `gomining_vip` | VIP level from TH, veGOMINING or referrals, its perks, the next level, and optional Simple Earn rewards |
-| `gomining_clan_miner_wars` | HONKSQUAD's Miner Wars league, rank, blocks, BTC estimate, members; optional Miner Wars vs plain mining |
+| `gomining_clan_miner_wars` | HONKSQUAD's current Miner Wars league, rank, blocks, gross BTC and a rough net, players; optional Miner Wars vs plain mining |
 | `gomining_payout_history` | Recorded payout days |
-| `gomining_api_request` | Any `https://api.gomining.com/api/...` endpoint, with your token |
+| `gomining_api_request` | Any `https://api.gomining.com/api/...` endpoint, with your token (local server only, not on the remote connector) |
 | `gomining_status` | Token set, writes allowed, live or sample data |
 
 Try: "What does a 16 TH miner at 15 W/TH earn per month on GoMining, and when does it pay back?"
@@ -141,7 +143,7 @@ The token gives full access to your GoMining account, so treat it like a passwor
 
 The account endpoints aren't documented, so find them in the same Network tab and ask Claude to call them through `gomining_api_request` with the path and body you see there.
 
-**Safety limits**: the token is only ever sent to `https://api.gomining.com`, and absolute URLs, `//host` and `..` paths are refused. Public market calls never send it. `PUT`, `PATCH` and `DELETE` are blocked unless `GOMINING_ALLOW_WRITES=1`. GoMining also uses `POST` for some actions, so check what an endpoint does before asking Claude to call it.
+**Safety limits**: the token is only ever sent to `https://api.gomining.com`, and absolute URLs, `//host`, `..` and encoded `%2e` paths are refused. Public market calls never send it. `PUT`, `PATCH` and `DELETE` are blocked unless `GOMINING_ALLOW_WRITES=1`. GoMining also uses `POST` for some actions, so check what an endpoint does before asking Claude to call it.
 
 ## Configuration
 
@@ -169,7 +171,7 @@ Run the same command again to update. Payout history and the MCP secret are kept
 
 The installer only adds its own site. If an existing Caddy or nginx config fails the config test, it restores the previous config and reloads nothing. It doesn't stop or change other services such as the Goose Discord bot.
 
-Optional account tools: add `GOMINING_TOKEN=...` to `/etc/gomining-hub.env` on the VPS and run `systemctl restart gomining-hub`. Status and logs: `systemctl status gomining-hub`, `journalctl -u gomining-hub -f`.
+The remote connector is public data only: it never loads `GOMINING_TOKEN` and has no `gomining_api_request`, so a leaked connector URL can't touch an account. Use the local MCP server for account tools. Status and logs: `systemctl status gomining-hub`, `journalctl -u gomining-hub -f`.
 
 ### Security on the VPS
 
@@ -179,7 +181,8 @@ Optional account tools: add `GOMINING_TOKEN=...` to `/etc/gomining-hub.env` on t
 - Responses carry a strict Content-Security-Policy and refuse framing.
 - A forced refresh is limited to once a minute, so the public refresh button can't be used to hammer GoMining.
 - The remote MCP endpoint answers only at `/mcp/<secret>` (64 random hex characters, compared in constant time); any other path gets a plain 404. The secret lives in `/etc/gomining-hub.env` (root-only).
-- The dashboard itself never loads `GOMINING_TOKEN`; only the MCP tools do, if you add one.
+- Neither the dashboard nor the remote MCP loads `GOMINING_TOKEN`; only the local MCP server on your PC does, if you give it one.
+- Miner Wars leaderboard fetches back off for 10 minutes after a failure, so visitors can't make the server hammer GoMining.
 
 ### Keeping secrets out of the repo
 

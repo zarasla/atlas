@@ -83,7 +83,8 @@ test('Miner Wars cycles run Tuesday to Tuesday UTC', () => {
   assert.equal(c.start, '2026-09-29T00:00:00.000Z');
   assert.equal(c.end, '2026-10-06T00:00:00.000Z');
   assert.equal(c.elapsedDays, 4.5);
-  assert.equal(leagueName(3), 'Horizon');
+  assert.equal(leagueName(3), 'Eclipse');
+  assert.equal(leagueName(4), 'Horizon');
   assert.equal(leagueName(5), 'Dune I');
 });
 
@@ -109,7 +110,7 @@ test('Miner Wars service finds HONKSQUAD, its zone and estimated BTC, and never 
   const data = await service.get({ waitForMembers: true });
   assert.equal(data.status, 'live');
   assert.equal(data.league.id, 3);
-  assert.equal(data.league.name, 'Horizon');
+  assert.equal(data.league.name, 'Eclipse');
   assert.equal(data.league.btcPerBlock, 0.001);
   assert.equal(data.league.promotedUpTo, 2);
   assert.equal(data.league.relegatedFrom, 5);

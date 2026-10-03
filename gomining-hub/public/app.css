@@ -23,7 +23,7 @@
   --warn-ink: #ffd56b;
   /* Chart series, validated all-pairs on the card surface. */
   --s1: #3987e5;
-  --s1-soft: #1c4378;
+  --s1-soft: #3064a8; /* 3:1 on the card surface (WCAG non-text contrast) */
   --s2: #d95926;
   --s3: #199e70;
   --glow: 0 0 0 1px rgba(61, 155, 255, 0.10), 0 18px 48px -28px rgba(61, 155, 255, 0.55);
@@ -236,10 +236,12 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 .ticker-move { display: flex; gap: 24px; padding-left: 16px; width: max-content; animation: ticker-scroll var(--ticker-duration, 80s) linear infinite; }
 .ticker-track:hover .ticker-move { animation-play-state: paused; }
 @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-/* The ticker always rotates like a market board; with reduced motion it just runs at half speed.
-   Hovering pauses it so a price can be read. */
+/* The ticker rotates like a market board; hovering pauses it so a price can be read. With reduced
+   motion it stands still and scrolls sideways by hand instead (WCAG 2.2.2). */
 @media (prefers-reduced-motion: reduce) {
-  .ticker-move { animation-duration: calc(var(--ticker-duration, 80s) * 2); }
+  .ticker-move { animation: none; }
+  .ticker-track { overflow-x: auto; scrollbar-width: none; }
+  .ticker-track::-webkit-scrollbar { display: none; }
 }
 .sym-short { display: none; }
 @media (max-width: 560px) {

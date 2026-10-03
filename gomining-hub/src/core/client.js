@@ -41,7 +41,8 @@ export class GoMiningClient {
   // Resolves an API path against the base URL and refuses anything that would leave GoMining's
   // API host, so the bearer token can only ever be sent to GoMining.
   resolve(path) {
-    if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('..')) {
+    // %2e is a dot to URL parsers, so encoded dot segments are refused like plain ones.
+    if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('..') || /%2e|\\/i.test(path)) {
       throw new GoMiningError(`Path must be an API path starting with "/", e.g. /nft/get-upgrade-rate (got ${JSON.stringify(path)})`);
     }
     const url = new URL(this.baseUrl + path);

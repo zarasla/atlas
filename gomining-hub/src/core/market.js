@@ -9,7 +9,7 @@
 // An optional ExternalService adds Bitcoin network stats, BTC/GOMINING prices and Fear & Greed. Those parts are
 // `null` (source `unavailable`) when their providers can't be reached; they never use sample data.
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeIncome, normalizePresets, normalizeUpgradeRates } from './calc.js';
@@ -87,11 +87,23 @@ export class MarketService {
   }
 
   async history() {
+    return (await this.readHistory()).rows;
+  }
+
+  // A missing file is an empty history; an unreadable one is reported, so it is never overwritten.
+  async readHistory() {
+    let text;
     try {
-      const rows = JSON.parse(await readFile(this.historyPath, 'utf8'));
-      return Array.isArray(rows) ? rows : [];
+      text = await readFile(this.historyPath, 'utf8');
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { rows: [], ok: true };
+      return { rows: [], ok: false };
+    }
+    try {
+      const rows = JSON.parse(text);
+      return Array.isArray(rows) ? { rows, ok: true } : { rows: [], ok: false };
     } catch {
-      return [];
+      return { rows: [], ok: false };
     }
   }
 
@@ -109,10 +121,18 @@ export class MarketService {
       ...(extra.network ? { hashrateEhs: extra.network.hashrateEhs, difficultyT: extra.network.difficultyT } : {}),
       ...(extra.prices?.gomining ? { gominingUsd: extra.prices.gomining.usd } : {}),
     };
-    const rows = (await this.history()).filter((row) => row.date !== day);
+    const current = await this.readHistory();
+    if (!current.ok) {
+      // Keep the damaged file for recovery and start a new one beside it rather than losing it.
+      await copyFile(this.historyPath, `${this.historyPath}.corrupt-${Date.now()}`).catch(() => {});
+    }
+    const rows = current.rows.filter((row) => row.date !== day);
     rows.push(point);
     rows.sort((a, b) => a.date.localeCompare(b.date));
     await mkdir(dirname(this.historyPath), { recursive: true });
-    await writeFile(this.historyPath, JSON.stringify(rows.slice(-HISTORY_LIMIT), null, 2));
+    // Write a temporary file and rename it over the old one, so a crash mid-write can't truncate it.
+    const temp = `${this.historyPath}.tmp`;
+    await writeFile(temp, JSON.stringify(rows.slice(-HISTORY_LIMIT), null, 2));
+    await rename(temp, this.historyPath);
   }
 }

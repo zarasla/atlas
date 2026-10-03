@@ -4,7 +4,8 @@
 //
 // The clan board is small and refreshed every 10 minutes. The player board only comes 50 rows at a
 // time (thousands of players per league), so the clan's member list is rebuilt in the background at
-// most every 30 minutes and the last good list is served meanwhile.
+// most every 30 minutes and the last good list is served meanwhile. After a failure neither is asked
+// for again until RETRY_MS has passed, so visitors can't make the server hammer GoMining.
 
 import { minerWarsCycle } from './calc.js';
 
@@ -14,10 +15,13 @@ const MAX_PAGES = 200;
 const CONCURRENCY = 4;
 const BOARD_TTL_MS = 10 * 60 * 1000;
 const MEMBERS_TTL_MS = 30 * 60 * 1000;
-// Odyssey, Horizon and Eclipse are leagues 1, 3 and 4; Dune I to XXVII are 5 to 31.
-const LEAGUE_IDS = [1, 3, 4, ...Array.from({ length: 27 }, (_, i) => i + 5)];
+const RETRY_MS = 10 * 60 * 1000;
+// League ids, top league first: Odyssey 1, Eclipse 3, Horizon 4, then Dune I to XXVII as 5 to 31
+// (2 is unused). Checked on 3 Oct 2026: HONKSQUAD finished cycle 162 fifth in league 4 and was
+// promoted into league 3, which the app shows as Eclipse with the same prize fund.
+const LEAGUE_IDS = [1, 3, 4, ...Array.from({ length: 27 }, (_, i) => i + 5), 2];
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX', 'XXI', 'XXII', 'XXIII', 'XXIV', 'XXV', 'XXVI', 'XXVII'];
-export const leagueName = (id) => ({ 1: 'Odyssey', 2: 'League 2', 3: 'Horizon', 4: 'Eclipse' })[id] ?? (id >= 5 && id <= 31 ? `Dune ${ROMAN[id - 5]}` : `League ${id}`);
+export const leagueName = (id) => ({ 1: 'Odyssey', 2: 'League 2', 3: 'Eclipse', 4: 'Horizon' })[id] ?? (id >= 5 && id <= 31 ? `Dune ${ROMAN[id - 5]}` : `League ${id}`);
 
 const num = (value) => {
   const number = Number(value);
@@ -47,7 +51,8 @@ export class MinerWarsService {
     }).then((response) => response?.data ?? response);
   }
 
-  // Every page of a leaderboard, a few requests at a time.
+  // Every page of a leaderboard, a few requests at a time. On the clan board `count` and the page size
+  // only apply to the safe-zone list (promoted and relegated clans come whole on every page).
   async allPages(path, leagueId) {
     const first = await this.post(path, leagueId, 0);
     const pages = Math.min(Math.ceil(num(first?.count) / PAGE), MAX_PAGES);
@@ -88,7 +93,7 @@ export class MinerWarsService {
       const { head, clans } = await this.clanBoard(leagueId);
       const index = clans.findIndex((row) => row.clanId === this.clanId);
       if (index === -1) continue;
-      if (this.leagueId !== leagueId) this.members = null;
+      if (this.leagueId !== leagueId) { this.members = null; this.membersErrorAt = null; }
       this.leagueId = leagueId;
       const totalBlocks = num(head.totalMinedBlocks);
       const btcFund = num(head.btcFund);
@@ -104,7 +109,7 @@ export class MinerWarsService {
         league: {
           id: leagueId,
           name: leagueName(leagueId),
-          clans: num(head.count) || clans.length,
+          clans: clans.length,
           totalBlocks,
           btcFund: round(btcFund, 8),
           btcPerBlock: round(btcPerBlock, 8),
@@ -155,7 +160,8 @@ export class MinerWarsService {
     if (!leagueId) return null;
     this.membersInflight ??= this.loadMembers(leagueId)
       .then((value) => { this.members = { at: this.now(), value }; })
-      .catch((error) => { this.membersError = error?.message ?? String(error); })
+      .then(() => { this.membersError = null; this.membersErrorAt = null; })
+      .catch((error) => { this.membersError = error?.message ?? String(error); this.membersErrorAt = this.now(); })
       .finally(() => { this.membersInflight = null; });
     return this.membersInflight;
   }
@@ -163,17 +169,20 @@ export class MinerWarsService {
   // { status: 'live' | 'unavailable', ...board, members: { status, updatedAt, rows } }.
   // `waitForMembers` (tests, MCP) waits for the member list instead of returning "loading".
   async get({ waitForMembers = false } = {}) {
-    if (!this.board || this.now() - this.board.at >= this.boardTtlMs) {
+    const boardDue = !this.board || this.now() - this.board.at >= this.boardTtlMs;
+    const boardResting = !this.board && this.boardErrorAt && this.now() - this.boardErrorAt < RETRY_MS;
+    if (boardDue && !boardResting) {
       this.boardInflight ??= this.loadBoard()
-        .then((value) => { this.board = { at: this.now(), value }; this.boardError = null; })
-        .catch((error) => { this.boardError = error?.message ?? String(error); if (this.board) this.board.at = this.now(); })
+        .then((value) => { this.board = { at: this.now(), value }; this.boardError = null; this.boardErrorAt = null; })
+        .catch((error) => { this.boardError = error?.message ?? String(error); this.boardErrorAt = this.now(); if (this.board) this.board.at = this.now(); })
         .finally(() => { this.boardInflight = null; });
       await this.boardInflight;
     }
     if (!this.board) return { status: 'unavailable', error: this.boardError, cycle: minerWarsCycle(this.now()) };
 
     const stale = !this.members || this.now() - this.members.at >= this.membersTtlMs;
-    if (stale) {
+    const resting = this.membersErrorAt && this.now() - this.membersErrorAt < RETRY_MS;
+    if (stale && !resting) {
       const pending = this.refreshMembers();
       if (waitForMembers && pending) await pending;
     }

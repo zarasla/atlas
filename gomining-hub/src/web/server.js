@@ -71,7 +71,7 @@ async function readJson(req) {
 // Stateless MCP: a fresh server and transport per request, which is all Claude's connectors need.
 async function handleMcp(req, res, mcp) {
   const body = req.method === 'POST' ? await readJson(req) : undefined;
-  const server = createMcpServer(mcp);
+  const server = createMcpServer({ ...mcp, remote: mcp.remote ?? true });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on('close', () => {
     transport.close().catch(() => {});
@@ -145,7 +145,13 @@ export function createApp({ market, mcp, ticker, minerWars }) {
       if (url.pathname === '/lib/calc.js') return send(res, 200, await readFile(CALC_MODULE), TYPES['.js']);
 
       // Static files, confined to public/.
-      const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      let decoded;
+      try {
+        decoded = decodeURIComponent(url.pathname);
+      } catch {
+        return send(res, 400, 'Bad request', 'text/plain');
+      }
+      const relative = url.pathname === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
       const file = normalize(join(PUBLIC_DIR, relative));
       if (!file.startsWith(PUBLIC_DIR + sep)) return send(res, 403, 'Forbidden', 'text/plain');
       let body = await readFile(file).catch(() => null);
@@ -166,8 +172,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv
   const host = process.env.HOST || '127.0.0.1';
   const dashboard = fromEnv(process.env, { withToken: false });
   const key = process.env.MCP_ACCESS_KEY?.trim();
-  // The MCP tools may use a GoMining token (from the VPS env file); the dashboard never does.
-  const mcp = key ? { key, ...fromEnv(process.env), market: dashboard.market, minerWars: dashboard.minerWars } : undefined;
+  // The remote MCP is public-data only: no GoMining token and no raw API passthrough, so a leaked
+  // connector URL can't act on anyone's account. Account tools run only in the local (stdio) server.
+  const mcp = key ? { key, client: dashboard.client, market: dashboard.market, minerWars: dashboard.minerWars, remote: true } : undefined;
   // One ExternalService for the ticker and the dashboard, so they share CoinGecko answers.
   const ticker = new TickerService({ external: dashboard.market.external ?? new ExternalService() });
   createHttpServer(createApp({ market: dashboard.market, mcp, ticker, minerWars: dashboard.minerWars })).listen(port, host, () => {
