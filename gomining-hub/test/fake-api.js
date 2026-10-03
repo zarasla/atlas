@@ -56,6 +56,12 @@ export function fakeFetch(routes = {}) {
       case 'GET /api/blocks/tip/height': return reply(200, mempool.height);
       case 'GET /api/v1/fees/recommended': return reply(200, mempool.fees);
       case 'GET /api/v3/simple/price': return reply(200, coingecko);
+      case 'GET /api/v3/coins/markets': return reply(200, [
+        { market_cap_rank: 1, symbol: 'btc', name: 'Bitcoin', current_price: 80500, price_change_percentage_24h: 1.25 },
+        { market_cap_rank: 2, symbol: 'eth', name: 'Ethereum', current_price: 3100.5, price_change_percentage_24h: -0.8 },
+        { market_cap_rank: 3, symbol: 'sol', name: 'Solana', current_price: 160.2, price_change_percentage_24h: 4.1 },
+        { market_cap_rank: 4, symbol: 'bad', name: 'No price' },
+      ]);
       default: return reply(404, { message: 'Not Found' });
     }
   };

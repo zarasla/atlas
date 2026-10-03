@@ -46,7 +46,7 @@ Context from two keyless public sources, each optional (its panel says "unavaila
 | Source | Gives |
 |---|---|
 | mempool.space | Network hashrate, difficulty, next adjustment (progress, expected change, date), block height, fees |
-| CoinGecko | BTC and GOMINING prices with 24h change and market cap |
+| CoinGecko | BTC and GOMINING prices with 24h change and market cap; top 50 coins by market cap for the ticker bar (fetched at most once a minute) |
 
 Results are cached for 5 minutes. The refresh button skips the cache.
 

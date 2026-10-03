@@ -74,6 +74,21 @@ export class ExternalService {
     return { btc, gomining: token };
   }
 
+  // Top coins by market cap for the ticker bar: symbol, name, price and 24h change.
+  async topCoins(limit = 50) {
+    const rows = await this.json(`${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${limit}&page=1&price_change_percentage=24h`);
+    if (!Array.isArray(rows)) throw new Error('CoinGecko markets data is malformed');
+    return rows
+      .filter((row) => typeof row?.symbol === 'string' && isNumber(row?.current_price))
+      .map((row) => ({
+        rank: isNumber(row.market_cap_rank) ? row.market_cap_rank : null,
+        symbol: row.symbol.toUpperCase().slice(0, 12),
+        name: String(row.name ?? '').slice(0, 40),
+        priceUsd: row.current_price,
+        change24hPct: round(row.price_change_percentage_24h, 2),
+      }));
+  }
+
   // Both parts in parallel; a failing part is null with its error kept.
   async get() {
     const [network, prices] = await Promise.allSettled([this.network(), this.prices()]);

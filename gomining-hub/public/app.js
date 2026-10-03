@@ -727,6 +727,58 @@ $('efficiency').addEventListener('change', (event) => {
 
 $('refresh').addEventListener('click', () => load({ refresh: true }));
 
+// ---------- Ticker bar ----------
+const coinPrice = (value) => (value >= 1000 ? usd(value, 0) : value >= 1 ? usd(value, 2) : usd(value, value >= 0.01 ? 4 : 6));
+
+function changeSpan(el, value) {
+  el.replaceChildren();
+  if (value === null || value === undefined) return;
+  el.className = `tk-ch ${value > 0 ? 'arrow-up good' : value < 0 ? 'arrow-down bad' : ''}`;
+  el.textContent = `${num(Math.abs(value), 2)}%`;
+}
+
+function tickerItem(coin) {
+  const item = document.createElement('span');
+  item.className = 'tk';
+  item.title = `#${coin.rank ?? '?'} ${coin.name}`;
+  const sym = document.createElement('span'); sym.className = 'tk-sym'; sym.textContent = coin.symbol;
+  const price = document.createElement('b'); price.textContent = coinPrice(coin.priceUsd);
+  const change = document.createElement('span'); changeSpan(change, coin.change24hPct);
+  item.append(sym, price, change);
+  return item;
+}
+
+async function loadTicker() {
+  try {
+    const data = await getJson('/api/ticker');
+    $('tk-btc').textContent = data.btc ? coinPrice(data.btc.priceUsd) : '—';
+    changeSpan($('tk-btc-ch'), data.btc?.change24hPct);
+    $('tk-gmt').textContent = data.gomining ? coinPrice(data.gomining.priceUsd) : '—';
+    changeSpan($('tk-gmt-ch'), data.gomining?.change24hPct);
+    const move = $('ticker-move');
+    if (!data.coins.length) {
+      move.replaceChildren();
+      const note = document.createElement('span');
+      note.className = 'tk-sym';
+      note.textContent = 'Top coins unavailable right now';
+      move.appendChild(note);
+      move.style.animation = 'none';
+      return;
+    }
+    // Two copies side by side so the scroll loops without a gap; ~1.6s per coin keeps it readable.
+    const items = data.coins.map(tickerItem);
+    const copy = data.coins.map(tickerItem);
+    copy.forEach((node) => node.setAttribute('aria-hidden', 'true'));
+    move.replaceChildren(...items, ...copy);
+    move.style.animation = '';
+    move.style.setProperty('--ticker-duration', `${Math.max(30, data.coins.length * 1.6)}s`);
+  } catch {
+    // Keep whatever is showing; the next refresh tries again.
+  }
+}
+loadTicker();
+setInterval(loadTicker, 60 * 1000);
+
 // Feed the Goose: copy the full donation address.
 $('donate-copy').addEventListener('click', async () => {
   const button = $('donate-copy');
