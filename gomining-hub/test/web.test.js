@@ -44,6 +44,21 @@ test('serves the dashboard and refuses paths outside public/', async () => {
   assert.equal((await fetch(`${base}/api/market`, { method: 'POST' })).status, 405);
 });
 
+test('fills the link-preview address from the request host, rejecting junk hosts', async () => {
+  const { request } = await import('node:http');
+  const get = (host) => new Promise((resolve, reject) => {
+    const req = request(`${base}/`, { headers: { host } }, (res) => { let d = ''; res.on('data', (c) => { d += c; }); res.on('end', () => resolve(d)); });
+    req.on('error', reject);
+    req.end();
+  });
+  const good = await get('hub.example.com');
+  assert.match(good, /content="https:\/\/hub\.example\.com\/og-image\.jpg"/);
+  assert.ok(!good.includes('__ORIGIN__'));
+  const bad = await get('evil.com"><script>');
+  assert.ok(!bad.includes('<script>"'), 'header text is never injected');
+  assert.match(bad, /content="\/og-image\.jpg"/);
+});
+
 test('serves the shared calculation module to the browser calculator', async () => {
   const response = await fetch(`${base}/lib/calc.js`);
   assert.equal(response.status, 200);

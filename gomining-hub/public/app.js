@@ -1,5 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
-import { findListedPrice, investmentPlan, listedPricePerTh, rewardsBreakdown } from '/lib/calc.js';
+import { findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -405,6 +405,7 @@ function renderAll() {
   if (!state.market) return;
   renderEfficiencyOptions();
   renderCalculator();
+  renderMyMiners();
   renderHero();
   renderSplit();
   renderCurve();
@@ -533,6 +534,161 @@ $('gc-form').addEventListener('input', () => {
 $('gc-form').addEventListener('submit', (event) => event.preventDefault());
 for (const button of $('gc-mode').children) button.addEventListener('click', () => setMode(button.dataset.mode));
 
+// ---------- My miners (this browser only) ----------
+const MINERS_KEY = 'myMiners';
+function loadMiners() {
+  try {
+    const list = JSON.parse(store.get(MINERS_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((m) => m && m.powerTh > 0 && m.efficiencyWth > 0).slice(0, 200) : [];
+  } catch {
+    return [];
+  }
+}
+const saveMiners = (list) => store.set(MINERS_KEY, JSON.stringify(list));
+$('mm-discount').value = store.get('myDiscount') ?? '0';
+
+function cell(row, text, className) {
+  const td = row.insertCell();
+  td.textContent = text;
+  if (className) td.className = className;
+  return td;
+}
+
+function renderMyMiners() {
+  if (!state.market) return;
+  const miners = loadMiners();
+  const body = $('mm-body');
+  if (!miners.length) {
+    body.replaceChildren(empty('Add your miners above to see your own daily sats, monthly income and which upgrades pay off. They stay in this browser only.'));
+    return;
+  }
+  const p = portfolio(state.market.income, miners, { discountPct: Number($('mm-discount').value) || 0, upgrades: state.market.upgrades });
+  const t = p.totals;
+  const summary = document.createElement('div');
+  summary.className = 'mm-summary';
+  for (const [label, value, sub] of [
+    ['Total power', `${num(t.powerTh, t.powerTh < 10 ? 2 : 1)} TH`, `${t.miners} miner${t.miners === 1 ? '' : 's'}`],
+    ['Average efficiency', `${num(t.avgEfficiencyWth, 1)} W/TH`, 'weighted by TH'],
+    ['Net per day', `${num(t.netSatsDay)} sats`, usdSmart(t.netUsdDay)],
+    ['Net per month', usdSmart(t.netUsdMonth), `${num(t.netBtcMonth, 6)} BTC`],
+  ]) {
+    const box = document.createElement('div');
+    const l = document.createElement('span'); l.className = 'tile-label'; l.textContent = label;
+    const v = document.createElement('strong'); v.textContent = value;
+    const s = document.createElement('span'); s.className = 'tile-meta'; s.textContent = sub;
+    box.append(l, v, s);
+    summary.appendChild(box);
+  }
+  const tableEl = document.createElement('table');
+  const head = tableEl.createTHead().insertRow();
+  ['Miner', 'TH', 'W/TH', 'Net / day', 'Sats / day', 'Next upgrade', 'Pays back', ''].forEach((label, i) => {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = label;
+    if (i > 0 && i < 7) th.className = 'num';
+    head.appendChild(th);
+  });
+  const tbody = tableEl.createTBody();
+  p.rows.forEach((row, index) => {
+    const tr = tbody.insertRow();
+    cell(tr, row.name || `Miner ${index + 1}`);
+    cell(tr, num(row.powerTh, row.powerTh < 10 ? 2 : 1), 'num');
+    cell(tr, num(row.efficiencyWth, 1), 'num');
+    cell(tr, usdSmart(row.netUsdDay), `num${row.netUsdDay < 0 ? ' neg' : ''}`);
+    cell(tr, num(row.netSatsDay), 'num');
+    cell(tr, row.upgrade ? `→ ${row.upgrade.toWth} W/TH for ${usd(row.upgrade.costUsd, 2)}` : 'at best level', 'num');
+    cell(tr, row.upgrade?.paybackDays ? `${num(row.upgrade.paybackDays)} days` : '—', 'num');
+    const actions = tr.insertCell();
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'mm-remove';
+    remove.title = 'Remove this miner';
+    remove.setAttribute('aria-label', `Remove ${row.name || `miner ${index + 1}`}`);
+    remove.textContent = '✕';
+    remove.addEventListener('click', () => {
+      const list = loadMiners();
+      list.splice(index, 1);
+      saveMiners(list);
+      renderMyMiners();
+    });
+    actions.appendChild(remove);
+  });
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  wrap.appendChild(tableEl);
+  body.replaceChildren(summary, wrap);
+}
+
+$('mm-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = event.target.elements;
+  const powerTh = Number(f.powerTh.value);
+  const efficiencyWth = Number(f.efficiencyWth.value);
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) return;
+  const list = loadMiners();
+  list.push({ name: f.name.value.trim().slice(0, 40), powerTh, efficiencyWth });
+  saveMiners(list);
+  event.target.reset();
+  f.name.focus();
+  renderMyMiners();
+});
+$('mm-discount').addEventListener('input', () => {
+  store.set('myDiscount', $('mm-discount').value);
+  renderMyMiners();
+});
+$('mm-clear').addEventListener('click', () => {
+  if (loadMiners().length && confirm('Remove all your saved miners from this browser?')) {
+    saveMiners([]);
+    renderMyMiners();
+  }
+});
+
+// ---------- Share a calculation (Discord) ----------
+const SHARE_FIELDS = ['powerTh', 'efficiencyWth', 'discountPct', 'priceUsd', 'monthlyUsd', 'months', 'pricePerThUsd'];
+
+// Opening a shared link fills the calculator with the sender's numbers.
+function applySharedLink() {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  if (!hash.has('calc')) return;
+  const f = $('gc-form').elements;
+  for (const name of SHARE_FIELDS) {
+    const value = hash.get(name);
+    if (value !== null && /^\d+(\.\d+)?$/.test(value)) f[name].value = value;
+  }
+  f.reinvest.checked = hash.get('reinvest') === '1';
+  f.average.checked = hash.get('average') === '1';
+  state.gcMode = hash.get('calc') === 'plan' ? 'plan' : 'rewards';
+}
+
+function shareLink() {
+  const f = $('gc-form').elements;
+  const params = new URLSearchParams({ calc: state.gcMode });
+  const fields = state.gcMode === 'plan'
+    ? ['powerTh', 'efficiencyWth', 'discountPct', 'monthlyUsd', 'months', 'pricePerThUsd']
+    : ['powerTh', 'efficiencyWth', 'discountPct', 'priceUsd'];
+  for (const name of fields) if (f[name].value !== '') params.set(name, f[name].value);
+  if (state.gcMode === 'plan' && f.reinvest.checked) params.set('reinvest', '1');
+  if (f.average.checked) params.set('average', '1');
+  return `${location.origin}/#${params}`;
+}
+
+$('gc-share').addEventListener('click', async () => {
+  const link = shareLink();
+  const button = $('gc-share');
+  try {
+    await navigator.clipboard.writeText(link);
+    button.textContent = 'Copied! Paste it in Discord';
+  } catch {
+    window.prompt('Copy this link and paste it in Discord:', link);
+    button.textContent = 'Link ready';
+  }
+  button.classList.add('copied');
+  setTimeout(() => {
+    button.textContent = 'Copy link for Discord';
+    button.classList.remove('copied');
+  }, 2500);
+});
+
 // ---------- controls ----------
 $('efficiency').addEventListener('change', (event) => {
   state.efficiency = Number(event.target.value);
@@ -565,5 +721,6 @@ new ResizeObserver(([entry]) => {
   resizeTimer = setTimeout(renderAll, 120);
 }).observe($('main'));
 
+applySharedLink();
 setMode(state.gcMode);
 load();

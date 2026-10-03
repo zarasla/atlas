@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The Goose's · Mining HQ</title>
-  <meta name="description" content="The Goose's mining dashboard: GoMining payout, miner payback, upgrade advisor, Bitcoin network and prices.">
+  <title>The Goose's · HONKSQUAD Mining HQ</title>
+  <meta name="description" content="HONKSQUAD's GoMining dashboard: rewards calculator, my miners, miner payback, upgrade advisor, Bitcoin network and live prices.">
+  <!-- Discord link preview. __ORIGIN__ is filled in by the server with the site's own address. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="The Goose's · HONKSQUAD">
+  <meta property="og:title" content="The Goose's · HONKSQUAD Mining HQ">
+  <meta property="og:description" content="GoMining rewards calculator, my miners, payback, upgrade advisor, Bitcoin network and live prices.">
+  <meta property="og:url" content="__ORIGIN__/">
+  <meta property="og:image" content="__ORIGIN__/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#030915">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -18,7 +28,7 @@
     <div class="wrap top-inner">
       <a class="brand" href="/" aria-label="The Goose's mining dashboard">
         <img class="brand-logo" src="goose-logo-160.webp" alt="" width="44" height="44">
-        <span class="brand-text"><span class="brand-name">The Goose's</span><span class="brand-sub">Mining HQ</span></span>
+        <span class="brand-text"><span class="brand-name">The Goose's</span><span class="brand-sub">HONKSQUAD · Mining HQ</span></span>
       </a>
       <div class="top-actions">
         <span class="source" id="source" data-state="loading"><span class="source-dot"></span><span id="source-text">Loading…</span></span>
@@ -42,6 +52,7 @@
           <button type="button" role="radio" aria-checked="true" data-mode="rewards">Rewards</button>
           <button type="button" role="radio" aria-checked="false" data-mode="plan">Investment plan</button>
         </div>
+        <button class="link-btn share-btn" type="button" id="gc-share" title="Copies a link to this exact calculation, ready to paste in Discord">Copy link for Discord</button>
       </header>
 
       <form id="gc-form" class="gc-form" autocomplete="off">
@@ -78,6 +89,26 @@
         <div class="table-wrap scroll" id="gp-table" hidden></div>
       </div>
       <p class="fine" id="gc-note"></p>
+    </section>
+
+    <section class="card" id="my-miners">
+      <header class="card-head">
+        <div>
+          <h2>My miners</h2>
+          <p class="card-sub">Saved only in this browser. No login, nothing sent to the server.</p>
+        </div>
+        <div class="mm-actions">
+          <label class="field inline"><span>Discount %</span><input id="mm-discount" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+          <button class="link-btn" type="button" id="mm-clear">Clear all</button>
+        </div>
+      </header>
+      <form id="mm-form" class="mm-form" autocomplete="off">
+        <label class="field"><span>Name (optional)</span><input name="name" type="text" maxlength="40" placeholder="e.g. Goose #1"></label>
+        <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0.01" step="any" required inputmode="decimal"></label>
+        <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" required inputmode="decimal"></label>
+        <button class="btn" type="submit">Add miner</button>
+      </form>
+      <div id="mm-body"></div>
     </section>
 
     <div class="filters" role="group" aria-label="Filters">
@@ -195,9 +226,20 @@
       <div class="table-wrap" id="history-table" hidden></div>
     </section>
 
+    <details class="card help">
+      <summary><h2>How it works</h2></summary>
+      <div class="help-body">
+        <p><strong>Where the numbers come from.</strong> GoMining publishes the daily payout per TH, the BTC price it uses, the electricity and service fees and its miner prices. This site reads them live every few minutes, adds Bitcoin network data from mempool.space and prices from CoinGecko, and does the maths.</p>
+        <p><strong>Net reward</strong> = payout − electricity (your W/TH × the electricity rate) − service fee, per TH per day. Your <strong>maintenance discount</strong> (VIP level, paying fees in GOMINING) reduces electricity + service by that percentage.</p>
+        <p><strong>My miners</strong> stays in your own browser. Clearing your browser data or switching device starts it empty again. Your GoMining account is never connected or asked for.</p>
+        <p><strong>Estimates, not promises.</strong> Everything assumes today's payout and fees stay the same. BTC price, network difficulty and GoMining's fees change, so treat payback and plans as a guide. Not financial advice.</p>
+        <p><strong>Share a calculation</strong> with “Copy link for Discord”: the link opens the calculator with your exact numbers.</p>
+      </div>
+    </details>
+
     <footer class="foot">
       <img src="goose-logo-160.webp" alt="" width="28" height="28">
-      <p>Data: GoMining's public API (payout, fees, miner prices, upgrade rates), mempool.space (Bitcoin network) and CoinGecko (prices). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
+      <p>Built for HONKSQUAD by The Goose's. Data: GoMining's public API (payout, fees, miner prices, upgrade rates), mempool.space (Bitcoin network) and CoinGecko (prices). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
     </footer>
   </main>
 

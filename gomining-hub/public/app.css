@@ -199,6 +199,31 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 @media (max-width: 900px) { .gc-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .gc-headline { grid-template-columns: minmax(0, 1fr); } }
 
+/* Share button */
+.share-btn { margin-left: auto; }
+.share-btn.copied { background: var(--good); border-color: var(--good); color: #03140a; }
+
+/* My miners */
+.mm-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mm-actions .field.inline input { width: 90px; height: 34px; }
+.mm-form { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 14px; }
+.btn { height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--electric); color: #031026; font-weight: 750; cursor: pointer; box-shadow: 0 0 14px rgba(61, 155, 255, 0.45); }
+.btn:hover { filter: brightness(1.1); }
+.mm-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.mm-summary div { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.mm-summary strong { display: block; font-size: 20px; margin-top: 2px; }
+.mm-remove { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.mm-remove:hover { color: var(--critical); }
+@media (max-width: 900px) { .mm-form { grid-template-columns: 1fr 1fr; } .mm-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* How it works */
+.help summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
+.help summary::-webkit-details-marker { display: none; }
+.help summary::after { content: "+"; margin-left: auto; font-size: 22px; color: var(--electric); }
+.help[open] summary::after { content: "−"; }
+.help-body { display: grid; gap: 10px; margin-top: 14px; color: var(--ink-2); font-size: 14px; max-width: 900px; }
+.help-body strong { color: var(--ink); }
+
 /* Segmented control for the history metric */
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
 .seg button { border: 0; background: transparent; color: var(--ink-2); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
@@ -259,7 +284,7 @@ tr.highlight td { background: rgba(247, 181, 0, 0.07); }
 @media (max-width: 560px) {
   .wrap, main { padding-left: 16px; padding-right: 16px; }
   .top-inner { padding: 0; }
-  .brand-sub { display: none; }
+  .brand-sub { font-size: 9px; letter-spacing: 0.16em; }
   .brand-name { font-size: 17px; }
   .source #source-text { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
   .kpis { gap: 10px; }

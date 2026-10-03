@@ -276,3 +276,39 @@ export function investmentPlan(market, { startTh = 0, efficiencyWth, monthlyUsd 
     },
   };
 }
+
+// A member's own miners (entered by them, never fetched): per-miner net and the next W/TH upgrade,
+// plus totals. The discount reduces electricity + service, so it also shrinks what an upgrade saves.
+export function portfolio(market, miners, { discountPct = 0, upgrades } = {}) {
+  const discount = Math.min(Math.max(Number(discountPct) || 0, 0), 100) / 100;
+  const stepCost = (toLevel) => upgrades?.efficiencyUpgradeSteps?.find((step) => step.toLevelWth === toLevel)?.priceUsdPerTh ?? null;
+  const rows = miners
+    .filter((miner) => miner.powerTh > 0 && miner.efficiencyWth > 0)
+    .map((miner) => {
+      const daily = rewardsBreakdown(market, { powerTh: miner.powerTh, efficiencyWth: miner.efficiencyWth, discountPct: discount * 100 }).periods.day;
+      const target = Math.ceil(miner.efficiencyWth) - 1;
+      const costPerTh = target >= EFFICIENCY_RANGE.min ? stepCost(target) : null;
+      const savingUsdDay = market.electricityUsdPerThPerWthDay * (miner.efficiencyWth - target) * miner.powerTh * (1 - discount);
+      const upgrade = costPerTh === null ? null : {
+        toWth: target,
+        costUsd: round(costPerTh * miner.powerTh, 2),
+        savingUsdDay: round(savingUsdDay, 4),
+        paybackDays: savingUsdDay > 0 ? Math.ceil((costPerTh * miner.powerTh) / savingUsdDay) : null,
+      };
+      return { ...miner, netUsdDay: daily.netUsd, netSatsDay: daily.netSats, netUsdMonth: round(daily.netUsd * DAYS_PER_MONTH, 2), upgrade };
+    });
+  const totalTh = rows.reduce((sum, row) => sum + row.powerTh, 0);
+  const netUsdDay = rows.reduce((sum, row) => sum + row.netUsdDay, 0);
+  return {
+    rows,
+    totals: {
+      miners: rows.length,
+      powerTh: round(totalTh, 3),
+      avgEfficiencyWth: totalTh ? round(rows.reduce((sum, row) => sum + row.efficiencyWth * row.powerTh, 0) / totalTh, 2) : null,
+      netUsdDay: round(netUsdDay, 4),
+      netSatsDay: Math.round(toSats(netUsdDay, market.btcPriceUsd)),
+      netUsdMonth: round(netUsdDay * DAYS_PER_MONTH, 2),
+      netBtcMonth: round((netUsdDay * DAYS_PER_MONTH) / market.btcPriceUsd, 8),
+    },
+  };
+}

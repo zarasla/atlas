@@ -23,7 +23,7 @@ import { createServer as createMcpServer } from '../mcp/server.js';
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 // The browser calculator imports the exact same maths the server and MCP tools use.
 const CALC_MODULE = join(dirname(fileURLToPath(import.meta.url)), '..', 'core', 'calc.js');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon' };
 
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, {
@@ -76,6 +76,13 @@ async function handleMcp(req, res, mcp) {
   await server.connect(transport);
   await transport.handleRequest(req, res, body);
 }
+
+const origin = (req) => {
+  const host = String(req.headers.host ?? '');
+  if (!/^[a-z0-9.-]+(:\d{1,5})?$/i.test(host)) return '';
+  const proto = req.headers['x-forwarded-proto'] === 'http' && /^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? 'http' : 'https';
+  return `${proto}://${host}`;
+};
 
 const positive = (value) => {
   const number = Number(value);
@@ -135,8 +142,11 @@ export function createApp({ market, mcp }) {
       const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
       const file = normalize(join(PUBLIC_DIR, relative));
       if (!file.startsWith(PUBLIC_DIR + sep)) return send(res, 403, 'Forbidden', 'text/plain');
-      const body = await readFile(file).catch(() => null);
+      let body = await readFile(file).catch(() => null);
       if (!body) return send(res, 404, 'Not found', 'text/plain');
+      // Link previews (Discord) need absolute URLs; use the address the page was requested on so no
+      // domain is hard-coded. Only a plain host name is accepted, never arbitrary header text.
+      if (extname(file) === '.html') body = Buffer.from(body.toString('utf8').replaceAll('__ORIGIN__', origin(req)));
       return send(res, 200, body, TYPES[extname(file)] ?? 'application/octet-stream');
     } catch (error) {
       if (res.headersSent) return res.end();

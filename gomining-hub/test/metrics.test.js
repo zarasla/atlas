@@ -111,3 +111,24 @@ test('rewardsBreakdown covers every period and applies the maintenance discount'
   const payoff = investmentPlan(market, { startTh: 10, efficiencyWth: 12, monthlyUsd: 0, months: 120, pricePerThUsd: 5 });
   assert.ok(payoff.summary.breakEvenMonth > 0);
 });
+
+test('portfolio totals a member\'s miners and suggests the next upgrade per miner', async () => {
+  const { portfolio } = await import('../src/core/calc.js');
+  const upgrades = normalizeUpgradeRates({ energyEfficiencyUpgradePriceConfig: [{ toLevel: 14, priceUsd: 2 }, { toLevel: 12, priceUsd: 3 }] });
+  const p = portfolio(market, [
+    { name: 'A', powerTh: 16, efficiencyWth: 15 },
+    { name: 'B', powerTh: 4, efficiencyWth: 13 },
+    { name: 'bad', powerTh: 0, efficiencyWth: 15 },
+  ], { upgrades });
+  assert.equal(p.totals.miners, 2);
+  assert.equal(p.totals.powerTh, 20);
+  assert.equal(p.totals.avgEfficiencyWth, 14.6);
+  assert.equal(p.rows[0].netUsdDay, 0.2096);
+  // A: 15 -> 14 costs 2 × 16 = 32, saves 0.0012 × 16 = 0.0192 a day
+  assert.deepEqual(p.rows[0].upgrade, { toWth: 14, costUsd: 32, savingUsdDay: 0.0192, paybackDays: 1667 });
+  assert.equal(p.rows[1].upgrade.toWth, 12);
+  const discounted = portfolio(market, [{ powerTh: 16, efficiencyWth: 15 }], { discountPct: 50, upgrades });
+  assert.equal(discounted.rows[0].upgrade.savingUsdDay, 0.0096);
+  assert.ok(discounted.totals.netUsdDay > p.rows[0].netUsdDay);
+  assert.equal(portfolio(market, []).totals.avgEfficiencyWth, null);
+});
