@@ -38,7 +38,7 @@ test('GET /api/earnings validates input and uses the listed price', async () => 
 test('serves the dashboard and refuses paths outside public/', async () => {
   const page = await fetch(`${base}/`);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /The Goose's/);
+  assert.match(await page.text(), /HONKSQUAD/);
   assert.equal((await fetch(`${base}/..%2fpackage.json`)).status, 403);
   assert.equal((await fetch(`${base}/api/nope`)).status, 404);
   assert.equal((await fetch(`${base}/api/market`, { method: 'POST' })).status, 405);

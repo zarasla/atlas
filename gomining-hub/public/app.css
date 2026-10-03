@@ -284,7 +284,8 @@ tr.highlight td { background: rgba(247, 181, 0, 0.07); }
 @media (max-width: 560px) {
   .wrap, main { padding-left: 16px; padding-right: 16px; }
   .top-inner { padding: 0; }
-  .brand-sub { font-size: 9px; letter-spacing: 0.16em; }
+  .brand-sub { font-size: 8.5px; letter-spacing: 0.12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand-text { min-width: 0; }
   .brand-name { font-size: 17px; }
   .source #source-text { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
   .kpis { gap: 10px; }
