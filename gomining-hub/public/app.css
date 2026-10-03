@@ -222,16 +222,18 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
   .donate-addr { flex: 1; min-width: 0; text-align: center; font-size: 11px; }
 }
 
-/* Ticker bar: BTC and GOMINING pinned, top coins scrolling */
-.ticker { display: flex; align-items: stretch; height: 38px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, rgba(10, 20, 38, 0.95), rgba(3, 9, 21, 0.95)); font-size: 13px; overflow: hidden; }
-.ticker-pinned { flex: none; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-right: 1px solid var(--border-strong); background: rgba(247, 181, 0, 0.05); box-shadow: 8px 0 16px -8px rgba(0, 0, 0, 0.8); z-index: 1; }
-.tk { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.tk-sym { color: var(--muted); font-weight: 700; font-size: 11px; letter-spacing: 0.06em; }
-.tk-main .tk-sym { color: var(--gold); }
-.tk b { color: var(--ink); font-weight: 700; }
-.tk-ch { font-size: 12px; }
+/* Ticker bar: BTC and GOMINING pinned, top coins scrolling. Quiet, page-width, no background. */
+.ticker { display: flex; align-items: stretch; max-width: 1240px; height: 30px; margin: 0 auto; padding: 0 24px; font-size: 12px; overflow: hidden; }
+.ticker-pinned { flex: none; display: flex; align-items: center; gap: 14px; padding-right: 14px; border-right: 1px solid var(--border); }
+.tk { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tk-sym { color: var(--muted); font-weight: 600; font-size: 10.5px; letter-spacing: 0.06em; }
+.tk-main .tk-sym { color: var(--gold); opacity: 0.85; }
+.tk b { color: var(--ink-2); font-weight: 600; }
+.tk-main b { color: var(--ink); }
+.tk-ch { font-size: 11px; }
+.tk-ch.good, .tk-ch.bad { font-weight: 600; opacity: 0.9; }
 .ticker-track { flex: 1; min-width: 0; overflow: hidden; position: relative; display: flex; align-items: center; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
-.ticker-move { display: flex; gap: 28px; padding-left: 24px; width: max-content; animation: ticker-scroll var(--ticker-duration, 80s) linear infinite; }
+.ticker-move { display: flex; gap: 24px; padding-left: 16px; width: max-content; animation: ticker-scroll var(--ticker-duration, 80s) linear infinite; }
 .ticker-track:hover .ticker-move { animation-play-state: paused; }
 @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) {
@@ -240,8 +242,8 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 }
 .sym-short { display: none; }
 @media (max-width: 560px) {
-  .ticker { font-size: 12px; }
-  .ticker-pinned { gap: 10px; padding: 0 10px; }
+  .ticker { padding: 0 16px; font-size: 11px; }
+  .ticker-pinned { gap: 10px; padding-right: 10px; }
   .ticker-pinned .tk-ch { display: none; }
   .sym-long { display: none; }
   .sym-short { display: inline; }
