@@ -1,0 +1,22 @@
+{
+  "name": "gomining-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that gives Claude GoMining market data, miner prices, earnings calculations and authenticated API access",
+  "type": "module",
+  "bin": {
+    "gomining-mcp": "src/index.js"
+  },
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^4.6.5"
+  }
+}

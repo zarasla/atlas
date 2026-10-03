@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HONKSQUAD · Mining HQ</title>
+  <meta name="description" content="HONKSQUAD's GoMining dashboard: rewards calculator, Miner Wars standings, VIP and discount builder, Simple Earn, miner payback, Bitcoin network and live prices.">
+  <!-- Discord link preview. __ORIGIN__ is filled in by the server with the site's own address. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="HONKSQUAD">
+  <meta property="og:title" content="HONKSQUAD · Mining HQ">
+  <meta property="og:description" content="GoMining rewards calculator, HONKSQUAD Miner Wars standings, VIP and discount builder, Simple Earn, payback and live prices.">
+  <meta property="og:url" content="__ORIGIN__/">
+  <meta property="og:image" content="__ORIGIN__/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#030915">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="/" aria-label="HONKSQUAD mining dashboard">
+        <img class="brand-logo" src="goose-logo-160.webp" alt="" width="44" height="44">
+        <span class="brand-text"><span class="brand-name">HONKSQUAD</span><span class="brand-sub">The Goose's · Mining HQ</span></span>
+      </a>
+      <div class="donate" aria-label="Donate bitcoin to The Goose's">
+        <span class="donate-btc" aria-hidden="true">₿</span>
+        <span class="donate-head">
+          <span class="donate-label">Feed the Goose</span>
+          <span class="donate-tag" title="Native SegWit (bech32, bc1…) address. Send BTC on the Bitcoin network only.">Native SegWit · BTC only</span>
+        </span>
+        <code class="donate-addr" title="bc1q8cgcp8mrxm980lhcm4y8emmkksms3xzghd5zep"><span class="addr-full">bc1q8cgcp8mrxm980lhcm4y8emmkksms3xzghd5zep</span><span class="addr-short">bc1q8cgc…hd5zep</span></code>
+        <button class="donate-copy" type="button" id="donate-copy" data-address="bc1q8cgcp8mrxm980lhcm4y8emmkksms3xzghd5zep" aria-label="Copy the bitcoin donation address">Copy</button>
+      </div>
+      <div class="top-actions">
+        <span class="source" id="source" data-state="loading"><span class="source-dot"></span><span id="source-text">Loading…</span></span>
+        <button class="icon-btn" id="refresh" type="button" aria-label="Refresh data" title="Refresh data">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="ticker" role="region" aria-label="Crypto prices">
+    <div class="ticker-pinned">
+      <span class="tk tk-main"><span class="tk-sym">BTC</span><b id="tk-btc">—</b><span class="tk-ch" id="tk-btc-ch"></span></span>
+      <span class="tk tk-main"><span class="tk-sym"><span class="sym-long">GOMINING</span><span class="sym-short">GMT</span></span><b id="tk-gmt">—</b><span class="tk-ch" id="tk-gmt-ch"></span></span>
+    </div>
+    <div class="ticker-track" id="ticker-track"><div class="ticker-move" id="ticker-move"></div></div>
+  </div>
+
+  <main class="wrap" id="main" aria-busy="true">
+    <div class="notice" id="notice" hidden></div>
+
+    <nav class="jump" id="jump" aria-label="Sections">
+      <a href="#g-today">Today</a>
+      <a href="#g-calc">Calculators</a>
+      <a href="#g-clan">HONKSQUAD</a>
+      <a href="#g-market">Market &amp; miners</a>
+      <a href="#history">History</a>
+    </nav>
+
+    <div class="group-title" id="g-today"><h2>Today</h2><p>GoMining's latest payout, the Bitcoin network and what could change it</p></div>
+
+    <div class="filters" role="group" aria-label="Filters">
+      <label class="field inline">
+        <span>Miner efficiency</span>
+        <select id="efficiency"></select>
+      </label>
+      <p class="filters-note">Scopes the headline, the payout split, the efficiency chart and the break-even card.</p>
+    </div>
+
+    <section class="hero-row">
+      <article class="card hero">
+        <img class="hero-mark" src="goose-logo.webp" alt="" aria-hidden="true">
+        <p class="eyebrow">Net reward per TH today</p>
+        <p class="hero-value"><span id="hero-sats">—</span><span class="hero-unit">sats</span></p>
+        <p class="hero-sub" id="hero-sub">&nbsp;</p>
+        <p class="hero-status" id="hero-status" hidden></p>
+      </article>
+      <div class="kpis" id="kpis">
+        <article class="card tile"><p class="tile-label">BTC price</p><p class="tile-value" id="k-btc">—</p><p class="tile-meta" id="k-btc-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">GOMINING token</p><p class="tile-value" id="k-gmt">—</p><p class="tile-meta" id="k-gmt-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Hashprice</p><p class="tile-value" id="k-hashprice">—</p><p class="tile-meta" id="k-hashprice-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Gross payout per TH</p><p class="tile-value" id="k-gross">—</p><p class="tile-meta" id="k-gross-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Network hashrate</p><p class="tile-value" id="k-hashrate">—</p><p class="tile-meta" id="k-hashrate-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Difficulty</p><p class="tile-value" id="k-diff">—</p><p class="tile-meta" id="k-diff-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Electricity</p><p class="tile-value" id="k-kwh">—</p><p class="tile-meta" id="k-kwh-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Service fee per TH</p><p class="tile-value" id="k-service">—</p><p class="tile-meta" id="k-service-meta">per day</p></article>
+      </div>
+    </section>
+
+    <section class="outlook" id="outlook">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Break-even BTC price</h2>
+            <p class="card-sub">The BTC price where the payout only just covers electricity + service, for each efficiency (before your discount, at today's difficulty)</p>
+          </div>
+        </header>
+        <div id="be-body"></div>
+      </article>
+      <div class="outlook-side">
+        <article class="card">
+          <header class="card-head"><div><h2>Halving countdown</h2><p class="card-sub" id="hv-sub">The block reward halves every 210,000 blocks</p></div></header>
+          <div id="hv-body"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><div><h2>Fear &amp; Greed</h2><p class="card-sub">Crypto market mood today, from alternative.me</p></div></header>
+          <div id="fg-body"></div>
+        </article>
+      </div>
+    </section>
+
+    <div class="group-title" id="g-calc"><h2>Calculators</h2><p>Your rewards, discount, VIP level and Simple Earn</p></div>
+
+    <section class="card goose-calc" id="calculator">
+      <header class="card-head">
+        <div>
+          <h2>Goose Calculator</h2>
+          <p class="card-sub" id="gc-sub">Uses GoMining's latest daily payout (settled once a day) and fees, plus your own miner and discounts</p>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Calculator mode" id="gc-mode">
+          <button type="button" role="radio" aria-checked="true" data-mode="rewards">Rewards</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="plan">Investment plan</button>
+        </div>
+        <button class="link-btn share-btn" type="button" id="gc-share" title="Copies a link to this exact calculation, ready to paste in Discord">Copy link for Discord</button>
+      </header>
+
+      <form id="gc-form" class="gc-form" autocomplete="off">
+        <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
+        <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
+        <label class="field"><span>Total maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="field"><span>BTC price</span>
+          <select name="btcScenario">
+            <option value="current">Current</option>
+            <option value="100000">$100,000</option>
+            <option value="200000">$200,000</option>
+            <option value="300000">$300,000</option>
+            <option value="500000">$500,000</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </label>
+        <label class="field" data-btc-custom hidden><span>Custom BTC price (USD)</span><input name="btcPriceCustom" type="number" min="1" step="any" placeholder="e.g. 150000" inputmode="decimal"></label>
+        <label class="field"><span>Electricity ($/kWh, optional)</span><input name="kwhPriceUsd" type="number" min="0" step="any" placeholder="GoMining rate" inputmode="decimal"></label>
+        <label class="field" data-only="rewards"><span>Price paid (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Monthly budget (USD)</span><input name="monthlyUsd" type="number" min="0" step="any" value="100" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Months</span><input name="months" type="number" min="1" max="120" step="1" value="24" inputmode="numeric"></label>
+        <label class="field" data-only="plan"><span>Price per TH, new purchases</span><input name="pricePerThUsd" type="number" min="0" step="any" placeholder="New-miner price" inputmode="decimal"></label>
+        <label class="check" data-only="plan"><input name="reinvest" type="checkbox"> Reinvest rewards every month</label>
+        <label class="field" data-only="plan"><span>Price per TH when reinvesting</span><input name="reinvestPricePerThUsd" type="number" min="0" step="any" placeholder="Your power-upgrade price" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Reinvest bonus (%)</span><input name="reinvestBonusPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="check"><input name="average" type="checkbox"> Use GoMining's 365-day average payout per TH instead of the latest day's</label>
+      </form>
+      <details class="gc-hint">
+        <summary>Which discounts, prices and payouts to enter?</summary>
+        <ul>
+          <li><strong>Total maintenance discount</strong> is the combined discount on electricity + service your GoMining app shows for your miners. It adds up paying maintenance in GOMINING (up to 20%), your VIP level (0% to 6%) and the Service Button (3%). Enter the total from your app, or work it out with <strong>Build your discount</strong> below.</li>
+          <li><strong>Electricity</strong> defaults to the rate in GoMining's latest payout data. Enter a different $/kWh if your miners use another rate.</li>
+          <li><strong>Price per TH, new purchases</strong> defaults to GoMining's listed price for new miners (primary market, not the secondary marketplace).</li>
+          <li><strong>Reinvesting</strong> into an existing miner is priced as a power upgrade, not as a new miner. Enter the power-upgrade price per TH your app shows, and any reinvest bonus (for example a VIP +5% or +10%). GoMining's reinvestment eligibility rules and minimums aren't checked here.</li>
+          <li><strong>365-day average</strong> is GoMining's total gross payout per TH over the last year divided by 365, which smooths out daily swings.</li>
+          <li><strong>BTC price</strong> scenarios keep your sats per TH the same (set by network difficulty, not price) and value them at the chosen price; electricity and service fees stay in USD. Difficulty is held constant, although in reality it tends to rise when BTC does.</li>
+          <li>Miner Wars rewards aren't included here: see <a href="#miner-wars">HONKSQUAD in Miner Wars</a> for the clan's numbers and a Miner Wars vs plain mining comparison.</li>
+        </ul>
+      </details>
+
+      <details class="gc-builder" id="db">
+        <summary><span class="db-icon" aria-hidden="true">%</span><span class="db-title">Build your discount</span><span class="db-desc">GOMINING balance + VIP level + Service Button</span><span class="db-badge">Save up to 29%</span></summary>
+        <form id="db-form" class="db-grid" autocomplete="off">
+          <label class="field"><span>GOMINING held (wallet + locked)</span><input name="gominingHeld" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
+          <label class="field"><span>VIP level</span><select name="vipLevel" id="db-vip"></select></label>
+          <button class="btn db-apply" type="button" id="db-apply">Use this discount</button>
+          <label class="check"><input name="serviceButton" type="checkbox"> I use the Service Button (3%)</label>
+          <div class="db-out" id="db-out" aria-live="polite"></div>
+        </form>
+        <p class="fine">Uses the power and efficiency above. Paying in GOMINING gives 1% for every 18 days of maintenance your GOMINING balance (wallet plus locked) covers, up to 20% at 360 days. VIP goes from 0% (Bronze I) to 6% (Elite), and from Silver I it also adds +5% TH when reinvesting (+10% from Diamond I). The three add up, to 29% at most.</p>
+      </details>
+
+      <div id="gc-rewards" aria-live="polite">
+        <div class="gc-headline">
+          <div><p class="eyebrow">Net per day</p><p class="calc-big" id="gc-day">—</p><p class="calc-sub" id="gc-day-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Net per month</p><p class="calc-big" id="gc-month">—</p><p class="calc-sub" id="gc-month-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Payback</p><p class="calc-big" id="gc-payback">—</p><p class="calc-sub" id="gc-payback-sub">&nbsp;</p></div>
+        </div>
+        <p class="gc-fees" id="gc-fees"></p>
+        <div class="table-wrap" id="gc-table"></div>
+      </div>
+
+      <div id="gc-plan" hidden aria-live="polite">
+        <div class="gc-headline">
+          <div><p class="eyebrow">Hashrate at the end</p><p class="calc-big" id="gp-th">—</p><p class="calc-sub" id="gp-th-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Total earned</p><p class="calc-big" id="gp-earned">—</p><p class="calc-sub" id="gp-earned-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Break-even</p><p class="calc-big" id="gp-break">—</p><p class="calc-sub" id="gp-break-sub">&nbsp;</p></div>
+        </div>
+        <div class="legend" id="gp-legend"></div>
+        <div class="chart" id="gp-chart"></div>
+        <button class="link-btn spaced" type="button" data-table-toggle="gp">Monthly table</button>
+        <div class="table-wrap scroll" id="gp-table" hidden></div>
+      </div>
+      <p class="fine" id="gc-note"></p>
+    </section>
+
+    <section class="grid-2" id="vip-earn">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Your VIP level</h2>
+            <p class="card-sub">Reached by any one of three paths: your mining power, locked veGOMINING, or referral activity over the last 180 days</p>
+          </div>
+        </header>
+        <form id="vip-form" class="vip-form" autocomplete="off">
+          <label class="field"><span>Mining power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
+          <label class="field"><span>Locked veGOMINING</span><input name="veGomining" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
+          <label class="field"><span>Referrals, last 180 days ($)</span><input name="referralUsd" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
+        </form>
+        <div id="vip-out" aria-live="polite"></div>
+        <button class="link-btn spaced" type="button" data-table-toggle="vip">All VIP levels</button>
+        <div class="table-wrap scroll" id="vip-table" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Simple Earn</h2>
+            <p class="card-sub">Idle balances earn BTC, paid every 4 hours: base APR × your VIP multiplier</p>
+          </div>
+        </header>
+        <form id="se-form" class="se-form" autocomplete="off">
+          <label class="field"><span>Asset</span>
+            <select name="asset"><option>USDT</option><option>USDC</option><option>BTC</option><option>BNB</option></select>
+          </label>
+          <label class="field"><span>Amount</span><input name="amount" type="number" min="0" step="any" value="1000" inputmode="decimal"></label>
+          <label class="field"><span>Base APR (%)</span><input name="aprPct" type="number" min="0" step="any" value="12.02" inputmode="decimal"></label>
+          <label class="field"><span>VIP level</span><select name="vipLevel" id="se-vip"></select></label>
+        </form>
+        <div id="se-out" aria-live="polite"></div>
+        <p class="fine">Base APRs change: check the current rate for each asset in your GoMining wallet (recently about 12% for USDT and USDC, 2–3% for BTC and 0.5% for BNB). Rewards are paid in BTC and shown at today's BTC price.</p>
+      </article>
+    </section>
+
+    <section class="card" id="my-miners">
+      <header class="card-head">
+        <div>
+          <h2>My miners</h2>
+          <p class="card-sub">Saved only in this browser. No login, nothing sent to the server.</p>
+        </div>
+        <div class="mm-actions">
+          <label class="field inline"><span>Discount %</span><input id="mm-discount" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+          <button class="link-btn" type="button" id="mm-clear">Clear all</button>
+        </div>
+      </header>
+      <form id="mm-form" class="mm-form" autocomplete="off">
+        <label class="field"><span>Name (optional)</span><input name="name" type="text" maxlength="40" placeholder="e.g. Goose #1"></label>
+        <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0.01" step="any" required inputmode="decimal"></label>
+        <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" required inputmode="decimal"></label>
+        <button class="btn" type="submit">Add miner</button>
+      </form>
+      <div id="mm-body"></div>
+    </section>
+
+    <div class="group-title" id="g-clan"><h2>HONKSQUAD</h2><p>The clan in Miner Wars</p></div>
+
+    <section class="card mw" id="miner-wars">
+      <header class="card-head">
+        <div>
+          <h2>HONKSQUAD in Miner Wars</h2>
+          <p class="card-sub" id="mw-sub">Live from GoMining's public Miner Wars leaderboard</p>
+        </div>
+        <p class="mw-clock" id="mw-clock"></p>
+      </header>
+      <div id="mw-body"><div class="empty">Loading the leaderboard…</div></div>
+      <div class="mw-panels" id="mw-panels" hidden>
+        <div>
+          <h3 class="mw-h">Around us</h3>
+          <div class="table-wrap" id="mw-neighbours"></div>
+          <button class="link-btn spaced" type="button" data-table-toggle="mw-board">Whole league</button>
+          <div class="table-wrap scroll" id="mw-board-table" hidden></div>
+        </div>
+        <div>
+          <h3 class="mw-h">Members <span id="mw-members-note"></span></h3>
+          <div class="table-wrap scroll" id="mw-members"></div>
+        </div>
+      </div>
+      <div class="mw-vs" id="mw-vs" hidden>
+        <h3 class="mw-h">Miner Wars or plain mining? <span>one week, your miners</span></h3>
+        <form id="vs-form" class="vs-form" autocomplete="off">
+          <label class="field"><span>Member (fills TH)</span><select name="member"><option value="">Choose…</option></select></label>
+          <label class="field"><span>Your TH</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
+          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
+          <label class="field"><span>Maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        </form>
+        <div class="vs-out" id="vs-out" aria-live="polite"></div>
+        <p class="fine" id="vs-note"></p>
+      </div>
+    </section>
+
+    <div class="group-title" id="g-market"><h2>Market &amp; miners</h2><p>Where the payout goes, GoMining's miners, prices and upgrades</p></div>
+
+    <section class="card">
+      <header class="card-head">
+        <div>
+          <h2>Where each TH's payout goes</h2>
+          <p class="card-sub" id="split-sub">Today, per TH per day</p>
+        </div>
+      </header>
+      <div class="chart" id="split-chart"></div>
+      <table class="legend-table" id="split-table" aria-label="Payout split per TH">
+        <thead><tr><th scope="col">Part</th><th scope="col" class="num">USD per day</th><th scope="col" class="num">Share of payout</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Net reward by efficiency</h2>
+            <p class="card-sub" id="curve-sub">Sats per TH per day at today's payout and fees</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="curve">Table</button>
+        </header>
+        <div class="chart" id="curve-chart"></div>
+        <div class="table-wrap" id="curve-table" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Next difficulty adjustment</h2>
+            <p class="card-sub">Bitcoin network, every 2,016 blocks</p>
+          </div>
+        </header>
+        <div id="network-body"></div>
+      </article>
+    </section>
+
+    <section class="card">
+      <header class="card-head">
+        <div>
+          <h2>Miner payback</h2>
+          <p class="card-sub" id="roi-sub">Every new miner GoMining sells (primary market), at the latest payout and list fees, before your discounts</p>
+        </div>
+      </header>
+      <div class="best" id="roi-best" hidden></div>
+      <div class="table-wrap scroll" id="roi-table"></div>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Miner prices</h2>
+            <p class="card-sub">New miners sold by GoMining (primary market), price per TH by size</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="prices">Table</button>
+        </header>
+        <div class="legend" id="prices-legend"></div>
+        <div class="chart" id="prices-chart"></div>
+        <div class="table-wrap" id="prices-table" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Upgrade advisor</h2>
+            <p class="card-sub" id="advisor-sub">Is one W/TH less worth it? Cost per TH against electricity saved</p>
+          </div>
+        </header>
+        <div class="table-wrap scroll" id="upgrade-table"></div>
+      </article>
+    </section>
+
+    <section class="card" id="history">
+      <header class="card-head">
+        <div>
+          <h2>History</h2>
+          <p class="card-sub" id="history-sub">Recorded each day the dashboard fetches live data</p>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="History metric" id="history-metric"></div>
+      </header>
+      <div class="chart" id="history-chart"></div>
+      <button class="link-btn spaced" type="button" data-table-toggle="history">Table</button>
+      <div class="table-wrap" id="history-table" hidden></div>
+    </section>
+
+    <details class="card help">
+      <summary><h2>How it works</h2></summary>
+      <div class="help-body">
+        <p><strong>Where the numbers come from.</strong> GoMining publishes the daily payout per TH, the BTC price it uses, the electricity and service fees and its miner prices. This site reads them live every few minutes, adds Bitcoin network data from mempool.space and prices from CoinGecko, and does the maths.</p>
+        <p><strong>Net reward</strong> = payout − electricity (your W/TH × the electricity rate) − service fee, per TH per day. Your <strong>total maintenance discount</strong> (mining-mode, service-button, GOMINING payment and VIP discounts, as your app shows them) reduces electricity + service by that percentage. GoMining settles the payout once a day, so the numbers change daily, not live.</p>
+        <p><strong>My miners</strong> stays in your own browser. Clearing your browser data or switching device starts it empty again. Your GoMining account is never connected or asked for.</p>
+        <p><strong>Estimates, not promises.</strong> Everything assumes the latest payout and fees stay the same, and the calculators don't include Miner Wars rewards. BTC price, network difficulty and GoMining's fees change, so treat payback and plans as a guide. Not financial advice.</p>
+        <p><strong>HONKSQUAD in Miner Wars</strong> reads GoMining's public Miner Wars leaderboards (the same ones the app shows): the clan board every 10 minutes and the member list every 30. The clan's BTC is estimated as blocks won × the league's BTC per block (prize fund ÷ blocks mined so far), and shared by TH. Spells, GOMINING rewards and GoMining's own adjustments aren't included.</p>
+        <p><strong>Outlook</strong>: break-even BTC price = electricity + service per TH ÷ BTC paid per TH. The halving countdown uses the current block height and average block time from mempool.space. Fear &amp; Greed comes from alternative.me.</p>
+        <p><strong>Share a calculation</strong> with “Copy link for Discord”: the link opens the calculator with your exact numbers.</p>
+      </div>
+    </details>
+
+    <footer class="foot">
+      <img src="goose-logo-160.webp" alt="" width="28" height="28">
+      <p>Built for HONKSQUAD by The Goose's. Data: GoMining's public API (payout, fees, miner prices, upgrade rates), GoMining's public Miner Wars leaderboards, mempool.space (Bitcoin network), CoinGecko (prices) and alternative.me (Fear &amp; Greed). Estimates use GoMining's latest daily payout and fees plus the discounts you enter. They exclude Miner Wars rewards and future BTC price, difficulty or fee changes. Not financial advice.</p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
