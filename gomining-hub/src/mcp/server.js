@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { calculateEarnings, dailyBreakdownPerTh, efficiencyCurve, findListedPrice } from '../core/calc.js';
+import { calculateEarnings, dailyBreakdownPerTh, efficiencyCurve, findListedPrice, hashprice, minerRoi, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
 import { GoMiningError } from '../core/client.js';
 
 const MAX_RESPONSE_CHARS = 60_000;
@@ -47,6 +47,8 @@ export function createServer({ client, market, allowWrites = false }) {
     const data = await market.get();
     return {
       ...data.income,
+      hashprice: hashprice(data.income),
+      payoutVsAveragePct: payoutVsAverage(data.income),
       ...(efficiencyWth ? { breakdownPerTh: dailyBreakdownPerTh(data.income, efficiencyWth) } : {}),
       ...provenance(data, 'income'),
     };
@@ -82,6 +84,45 @@ export function createServer({ client, market, allowWrites = false }) {
   }, tool(async () => {
     const data = await market.get();
     return { ...efficiencyCurve(data.income), ...provenance(data, 'income') };
+  }));
+
+  server.registerTool('gomining_miner_roi', {
+    title: 'Payback of every GoMining miner',
+    description: 'Every miner GoMining sells with its price, daily net reward, payback days and annual return at today\'s payout and fees, sorted fastest payback first.',
+    inputSchema: {
+      efficiencyWth: z.number().positive().optional().describe('Only miners at this efficiency'),
+      maxPriceUsd: z.number().positive().optional().describe('Only miners at or below this price'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ efficiencyWth, maxPriceUsd }) => {
+    const data = await market.get();
+    const rows = minerRoi(data.income, data.presets)
+      .filter((row) => (efficiencyWth === undefined || row.efficiencyWth === efficiencyWth) && (maxPriceUsd === undefined || row.priceUsd <= maxPriceUsd))
+      .sort((a, b) => (a.paybackDays ?? Infinity) - (b.paybackDays ?? Infinity));
+    return { count: rows.length, miners: rows, ...provenance(data, 'presets') };
+  }));
+
+  server.registerTool('gomining_upgrade_advisor', {
+    title: 'Is a W/TH upgrade worth it?',
+    description: 'For each one-step efficiency upgrade (e.g. 16 to 15 W/TH): GoMining\'s cost per TH, the electricity it saves per TH per day, and the payback in days.',
+    annotations: readOnly,
+  }, tool(async () => {
+    const data = await market.get();
+    return { steps: upgradeAdvisor(data.income, data.upgrades), ...provenance(data, 'upgrades') };
+  }));
+
+  server.registerTool('gomining_network_stats', {
+    title: 'Bitcoin network and prices',
+    description: 'Bitcoin network hashrate, difficulty, next difficulty adjustment (progress, expected change, date), block height and fees from mempool.space, plus BTC and GOMINING token prices with 24h change from CoinGecko.',
+    annotations: readOnly,
+  }, tool(async () => {
+    const data = await market.get();
+    return {
+      network: data.network,
+      prices: data.prices,
+      sources: { network: data.sources.network, prices: data.sources.prices },
+      ...(data.errors.network || data.errors.prices ? { errors: { network: data.errors.network, prices: data.errors.prices } } : {}),
+    };
   }));
 
   server.registerTool('gomining_calculate_earnings', {

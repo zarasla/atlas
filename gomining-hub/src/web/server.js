@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Serves the dashboard (public/) and a small JSON API over the shared market service.
 //
-//   GET /api/market     payout, miner prices, upgrade tables, efficiency curve, and data source
+//   GET /api/market     payout, prices, network, miner ROI, upgrade advisor, efficiency curve, sources
 //   GET /api/history    payouts recorded on days this server fetched live data
 //   GET /api/earnings   ?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]
 //   /mcp/<MCP_ACCESS_KEY>  the MCP server over Streamable HTTP, for Claude's custom connectors
@@ -15,13 +15,13 @@ import { createServer as createHttpServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { calculateEarnings, efficiencyCurve, findListedPrice } from '../core/calc.js';
+import { calculateEarnings, findListedPrice, marketSummary } from '../core/calc.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { fromEnv } from '../core/config.js';
 import { createServer as createMcpServer } from '../mcp/server.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.writeHead(status, {
@@ -30,7 +30,8 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
-    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // Google Fonts serves the Russo One headline face; everything else is same-origin only.
+    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
@@ -90,7 +91,7 @@ export function createApp({ market, mcp }) {
   const routes = {
     '/api/market': async (url) => {
       const data = await market.get({ fresh: url.searchParams.get('refresh') === '1' });
-      return { ...data, curve: efficiencyCurve(data.income) };
+      return { ...data, ...marketSummary(data) };
     },
     '/api/history': async () => ({ rows: await market.history() }),
     '/api/earnings': async (url) => {

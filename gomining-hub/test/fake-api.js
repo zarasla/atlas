@@ -25,19 +25,37 @@ export const upgradeRates = {
   energyEfficiencyUpgradePriceConfig: [{ toLevel: 12, priceUsd: 1.1 }],
 };
 
+// Shaped like mempool.space and CoinGecko responses.
+export const mempool = {
+  adjustment: { progressPercent: 42.5, difficultyChange: 1.8, estimatedRetargetDate: Date.parse('2026-10-10T00:00:00Z'), remainingBlocks: 1159, previousRetarget: -0.9, timeAvg: 590000 },
+  hashrate: { currentHashrate: 812.4e18, currentDifficulty: 112.3e12 },
+  height: 915000,
+  fees: { fastestFee: 6, halfHourFee: 4, hourFee: 3, economyFee: 2, minimumFee: 1 },
+};
+export const coingecko = {
+  bitcoin: { usd: 80500, eur: 74000, usd_24h_change: 1.25, usd_market_cap: 1.6e12 },
+  'gomining-token': { usd: 0.42, eur: 0.39, usd_24h_change: -2.5, usd_market_cap: 170e6 },
+};
+
 const reply = (status, value) => new Response(typeof value === 'string' ? value : JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 
 export function fakeFetch(routes = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     const target = new URL(url);
-    calls.push({ url: target.toString(), method: init.method, headers: init.headers, body: init.body ? JSON.parse(init.body) : undefined });
-    const key = `${init.method} ${target.pathname}`;
+    const method = init.method ?? 'GET';
+    calls.push({ url: target.toString(), method, headers: init.headers, body: init.body ? JSON.parse(init.body) : undefined });
+    const key = `${method} ${target.pathname}`;
     if (routes[key]) return routes[key](target, init);
     switch (key) {
       case 'POST /api/nft-income-aggregation/get-last': return reply(200, { data: income });
       case 'GET /api/nft-collection/find-all-generative': return reply(200, { data: { array: presets, count: presets.length } });
       case 'POST /api/nft/get-upgrade-rate': return reply(200, { data: upgradeRates });
+      case 'GET /api/v1/difficulty-adjustment': return reply(200, mempool.adjustment);
+      case 'GET /api/v1/mining/hashrate/3d': return reply(200, mempool.hashrate);
+      case 'GET /api/blocks/tip/height': return reply(200, mempool.height);
+      case 'GET /api/v1/fees/recommended': return reply(200, mempool.fees);
+      case 'GET /api/v3/simple/price': return reply(200, coingecko);
       default: return reply(404, { message: 'Not Found' });
     }
   };

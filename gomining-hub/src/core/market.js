@@ -5,6 +5,9 @@
 // `sample`, so every screen and tool says plainly when it is not showing live numbers.
 // Each live payout is also recorded by payout date in data/history.json, which builds the
 // day-by-day series GoMining's API does not provide.
+//
+// An optional ExternalService adds Bitcoin network stats and BTC/GOMINING prices. Those parts are
+// `null` (source `unavailable`) when their providers can't be reached; they never use sample data.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -21,8 +24,9 @@ const MIN_REFRESH_MS = 60 * 1000;
 const HISTORY_LIMIT = 730;
 
 export class MarketService {
-  constructor({ client, snapshotPath = DEFAULT_SNAPSHOT_PATH, historyPath = DEFAULT_HISTORY_PATH, ttlMs = DEFAULT_TTL_MS, minRefreshMs = MIN_REFRESH_MS, now = Date.now } = {}) {
+  constructor({ client, external, snapshotPath = DEFAULT_SNAPSHOT_PATH, historyPath = DEFAULT_HISTORY_PATH, ttlMs = DEFAULT_TTL_MS, minRefreshMs = MIN_REFRESH_MS, now = Date.now } = {}) {
     this.client = client;
+    this.external = external;
     this.snapshotPath = snapshotPath;
     this.historyPath = historyPath;
     this.ttlMs = ttlMs;
@@ -54,7 +58,10 @@ export class MarketService {
       ['presets', () => this.client.getMinerPresets(), normalizePresets, (s) => s.presets],
       ['upgrades', () => this.client.getUpgradeRates(), normalizeUpgradeRates, (s) => s.upgrades],
     ];
-    const settled = await Promise.allSettled(parts.map(([, fetchPart, normalize]) => fetchPart().then(normalize)));
+    const [settled, outside] = await Promise.all([
+      Promise.allSettled(parts.map(([, fetchPart, normalize]) => fetchPart().then(normalize))),
+      this.external ? this.external.get().catch((error) => ({ network: null, prices: null, errors: { network: error.message, prices: error.message } })) : null,
+    ]);
 
     const result = { source: 'live', fetchedAt: new Date(this.now()).toISOString(), errors: {}, sources: {} };
     for (const [index, [name, , normalize, fromSnapshot]] of parts.entries()) {
@@ -70,7 +77,12 @@ export class MarketService {
       }
     }
     if (result.source === 'sample') result.sampleCapturedAt = (await this.snapshot()).capturedAt;
-    if (result.sources.income === 'live') await this.record(result.income).catch(() => {});
+    for (const part of ['network', 'prices']) {
+      result[part] = outside?.[part] ?? null;
+      result.sources[part] = result[part] ? 'live' : 'unavailable';
+      if (outside?.errors?.[part]) result.errors[part] = outside.errors[part];
+    }
+    if (result.sources.income === 'live') await this.record(result.income, result).catch(() => {});
     return result;
   }
 
@@ -84,7 +96,7 @@ export class MarketService {
   }
 
   // Keyed by GoMining's payout date, so refetches correct the day in place instead of duplicating it.
-  async record(income) {
+  async record(income, extra = {}) {
     const day = income.payoutDate.slice(0, 10);
     const point = {
       date: day,
@@ -93,6 +105,9 @@ export class MarketService {
       rewardSatsPerThDay: income.rewardSatsPerThDay,
       electricityKwhPriceUsd: income.electricityKwhPriceUsd,
       serviceUsdPerThDay: income.serviceUsdPerThDay,
+      hashpriceUsdPerPhDay: Number((income.rewardUsdPerThDay * 1000).toFixed(4)),
+      ...(extra.network ? { hashrateEhs: extra.network.hashrateEhs, difficultyT: extra.network.difficultyT } : {}),
+      ...(extra.prices?.gomining ? { gominingUsd: extra.prices.gomining.usd } : {}),
     };
     const rows = (await this.history()).filter((row) => row.date !== day);
     rows.push(point);

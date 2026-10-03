@@ -133,3 +133,62 @@ export function calculateEarnings(market, { powerTh, efficiencyWth, days = 30, p
 export function findListedPrice(presets, powerTh, efficiencyWth) {
   return presets.find((row) => row.powerTh === powerTh && row.efficiencyWth === efficiencyWth)?.priceUsd ?? null;
 }
+
+// Hashprice: what one PH/s earns per day, the industry's standard yardstick for mining revenue.
+export function hashprice(market) {
+  return {
+    usdPerPhDay: round(market.rewardUsdPerThDay * 1000, 4),
+    satsPerPhDay: Math.round(toSats(market.rewardUsdPerThDay * 1000, market.btcPriceUsd)),
+  };
+}
+
+// Today's payout per TH against the 365-day average, in percent (null when GoMining omits the average).
+export function payoutVsAverage(market) {
+  const average = market.averageRewardUsdPerThDay365;
+  return average ? round((market.rewardUsdPerThDay / average - 1) * 100, 2) : null;
+}
+
+// Every miner GoMining sells, with its daily net, payback and annual return at today's rates.
+export function minerRoi(market, presets) {
+  return presets.map((miner) => {
+    const perTh = dailyBreakdownPerTh(market, miner.efficiencyWth);
+    const netUsdDay = perTh.netUsd * miner.powerTh;
+    return {
+      ...miner,
+      netUsdDay: round(netUsdDay, 4),
+      netSatsDay: Math.round(toSats(netUsdDay, market.btcPriceUsd)),
+      paybackDays: netUsdDay > 0 ? Math.ceil(miner.priceUsd / netUsdDay) : null,
+      annualReturnPct: round(((netUsdDay * 365) / miner.priceUsd) * 100, 2),
+    };
+  });
+}
+
+// Is it worth upgrading efficiency? Each W/TH less saves one W/TH of electricity per TH per day;
+// compare that with what GoMining charges per TH for the step.
+export function upgradeAdvisor(market, upgrades) {
+  const savingUsdPerThDay = market.electricityUsdPerThPerWthDay;
+  return upgrades.efficiencyUpgradeSteps
+    .filter((step) => step.toLevelWth >= EFFICIENCY_RANGE.min && step.toLevelWth < EFFICIENCY_RANGE.max)
+    .map((step) => ({
+      fromWth: step.toLevelWth + 1,
+      toWth: step.toLevelWth,
+      costUsdPerTh: step.priceUsdPerTh,
+      savingUsdPerThDay: round(savingUsdPerThDay, 6),
+      paybackDays: savingUsdPerThDay > 0 ? Math.ceil(step.priceUsdPerTh / savingUsdPerThDay) : null,
+    }));
+}
+
+// Everything derived from one market reading, shared by the dashboard API and the MCP tools.
+export function marketSummary(data) {
+  const income = data.income;
+  const roi = minerRoi(income, data.presets);
+  const best = roi.filter((row) => row.paybackDays).sort((a, b) => a.paybackDays - b.paybackDays)[0] ?? null;
+  return {
+    hashprice: hashprice(income),
+    payoutVsAveragePct: payoutVsAverage(income),
+    curve: efficiencyCurve(income),
+    minerRoi: roi,
+    fastestPayback: best,
+    upgradeAdvisor: upgradeAdvisor(income, data.upgrades),
+  };
+}

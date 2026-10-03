@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GoMining Hub</title>
-  <meta name="description" content="GoMining daily payout, miner prices, earnings and payback.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314130f'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h14M12 8v16M20 8v16' stroke='%23f2a900' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <title>The Goose's · Mining HQ</title>
+  <meta name="description" content="The Goose's mining dashboard: GoMining payout, miner payback, upgrade advisor, Bitcoin network and prices.">
+  <meta name="theme-color" content="#030915">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap top-inner">
-      <a class="brand" href="/" aria-label="GoMining Hub home">
-        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M9 11h14M9 16h14M9 21h14M12 8v16M20 8v16"/></svg>
-        <span>GoMining <b>Hub</b></span>
+      <a class="brand" href="/" aria-label="The Goose's mining dashboard">
+        <img class="brand-logo" src="goose-logo-160.webp" alt="" width="44" height="44">
+        <span class="brand-text"><span class="brand-name">The Goose's</span><span class="brand-sub">Mining HQ</span></span>
       </a>
       <div class="top-actions">
         <span class="source" id="source" data-state="loading"><span class="source-dot"></span><span id="source-text">Loading…</span></span>
         <button class="icon-btn" id="refresh" type="button" aria-label="Refresh data" title="Refresh data">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
-        </button>
-        <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
         </button>
       </div>
     </div>
@@ -40,16 +42,21 @@
 
     <section class="hero-row">
       <article class="card hero">
+        <img class="hero-mark" src="goose-logo.webp" alt="" aria-hidden="true">
         <p class="eyebrow">Net reward per TH today</p>
         <p class="hero-value"><span id="hero-sats">—</span><span class="hero-unit">sats</span></p>
         <p class="hero-sub" id="hero-sub">&nbsp;</p>
         <p class="hero-status" id="hero-status" hidden></p>
       </article>
-      <div class="tiles">
-        <article class="card tile"><p class="tile-label">BTC price used</p><p class="tile-value" id="t-btc">—</p><p class="tile-meta" id="t-date">&nbsp;</p></article>
-        <article class="card tile"><p class="tile-label">Gross payout per TH</p><p class="tile-value" id="t-gross">—</p><p class="tile-meta" id="t-gross-sats">&nbsp;</p></article>
-        <article class="card tile"><p class="tile-label">Electricity</p><p class="tile-value" id="t-kwh">—</p><p class="tile-meta" id="t-elec">&nbsp;</p></article>
-        <article class="card tile"><p class="tile-label">Service fee per TH</p><p class="tile-value" id="t-service">—</p><p class="tile-meta">per day</p></article>
+      <div class="kpis" id="kpis">
+        <article class="card tile"><p class="tile-label">BTC price</p><p class="tile-value" id="k-btc">—</p><p class="tile-meta" id="k-btc-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">GOMINING token</p><p class="tile-value" id="k-gmt">—</p><p class="tile-meta" id="k-gmt-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Hashprice</p><p class="tile-value" id="k-hashprice">—</p><p class="tile-meta" id="k-hashprice-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Gross payout per TH</p><p class="tile-value" id="k-gross">—</p><p class="tile-meta" id="k-gross-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Network hashrate</p><p class="tile-value" id="k-hashrate">—</p><p class="tile-meta" id="k-hashrate-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Difficulty</p><p class="tile-value" id="k-diff">—</p><p class="tile-meta" id="k-diff-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Electricity</p><p class="tile-value" id="k-kwh">—</p><p class="tile-meta" id="k-kwh-meta">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Service fee per TH</p><p class="tile-value" id="k-service">—</p><p class="tile-meta" id="k-service-meta">per day</p></article>
       </div>
     </section>
 
@@ -83,13 +90,11 @@
       <article class="card">
         <header class="card-head">
           <div>
-            <h2>Payout history</h2>
-            <p class="card-sub">Sats per TH per day, recorded each day this dashboard fetches live data</p>
+            <h2>Next difficulty adjustment</h2>
+            <p class="card-sub">Bitcoin network, every 2,016 blocks</p>
           </div>
-          <button class="link-btn" type="button" data-table-toggle="history">Table</button>
         </header>
-        <div class="chart" id="history-chart"></div>
-        <div class="table-wrap" id="history-table" hidden></div>
+        <div id="network-body"></div>
       </article>
     </section>
 
@@ -124,28 +129,55 @@
     <section class="card">
       <header class="card-head">
         <div>
-          <h2>Miner prices</h2>
-          <p class="card-sub">Price per TH by miner size, as GoMining lists them</p>
+          <h2>Miner payback</h2>
+          <p class="card-sub" id="roi-sub">Every miner GoMining sells, at today's payout and fees</p>
         </div>
-        <button class="link-btn" type="button" data-table-toggle="prices">Table</button>
       </header>
-      <div class="legend" id="prices-legend"></div>
-      <div class="chart" id="prices-chart"></div>
-      <div class="table-wrap" id="prices-table" hidden></div>
+      <div class="best" id="roi-best" hidden></div>
+      <div class="table-wrap scroll" id="roi-table"></div>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Miner prices</h2>
+            <p class="card-sub">Price per TH by miner size</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="prices">Table</button>
+        </header>
+        <div class="legend" id="prices-legend"></div>
+        <div class="chart" id="prices-chart"></div>
+        <div class="table-wrap" id="prices-table" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Upgrade advisor</h2>
+            <p class="card-sub">Is one W/TH less worth it? Cost per TH against electricity saved</p>
+          </div>
+        </header>
+        <div class="table-wrap scroll" id="upgrade-table"></div>
+      </article>
     </section>
 
     <section class="card">
       <header class="card-head">
         <div>
-          <h2>Upgrade costs</h2>
-          <p class="card-sub">USD per TH to reach each efficiency level</p>
+          <h2>History</h2>
+          <p class="card-sub" id="history-sub">Recorded each day the dashboard fetches live data</p>
         </div>
+        <div class="seg" role="radiogroup" aria-label="History metric" id="history-metric"></div>
       </header>
-      <div class="table-wrap scroll" id="upgrade-table"></div>
+      <div class="chart" id="history-chart"></div>
+      <button class="link-btn spaced" type="button" data-table-toggle="history">Table</button>
+      <div class="table-wrap" id="history-table" hidden></div>
     </section>
 
     <footer class="foot">
-      <p>Data: GoMining's public API (<code>nft-income-aggregation/get-last</code>, <code>nft-collection/find-all-generative</code>, <code>nft/get-upgrade-rate</code>). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
+      <img src="goose-logo-160.webp" alt="" width="28" height="28">
+      <p>Data: GoMining's public API (payout, fees, miner prices, upgrade rates), mempool.space (Bitcoin network) and CoinGecko (prices). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
     </footer>
   </main>
 

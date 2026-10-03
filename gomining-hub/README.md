@@ -1,11 +1,11 @@
-# GoMining Hub
+# The Goose's · Mining HQ (GoMining Hub)
 
 A GoMining dashboard and an MCP server for Claude, built on one shared data layer, so the numbers on screen and the numbers Claude quotes always match.
 
-- **Dashboard**: today's net reward per TH, where each TH's payout goes (net, electricity, service), net reward by efficiency, an earnings and payback calculator, miner prices by size, payout history and upgrade costs. Light and dark mode, works on a phone.
+- **Dashboard** in The Goose's brand: net reward per TH, BTC and GOMINING prices (24h change), hashprice, payout vs the 365-day average, network hashrate and difficulty, the next difficulty adjustment, where each TH's payout goes, net reward by efficiency with break-even, an earnings calculator, payback and annual return for every miner GoMining sells, an upgrade advisor, miner prices, and history charts (sats/TH, hashprice, BTC, hashrate, GOMINING). Works on a phone.
 - **MCP server**: the same data as tools Claude can call, plus a passthrough for your own GoMining account endpoints.
 
-![GoMining Hub dashboard](docs/dashboard-light.png)
+![The Goose's mining dashboard](docs/dashboard.png)
 
 ```
 gomining-hub/
@@ -40,6 +40,13 @@ Three public GoMining endpoints, the same ones app.gomining.com calls without lo
 | `POST /api/nft-income-aggregation/get-last` | Daily payout per TH, the BTC price used, electricity and service fees |
 | `GET /api/nft-collection/find-all-generative` | Miners GoMining sells, with prices |
 | `POST /api/nft/get-upgrade-rate` | Per-W/TH valuation and upgrade price tables |
+
+Context from two keyless public sources, each optional (its panel says "unavailable" if it's down, never sample data):
+
+| Source | Gives |
+|---|---|
+| mempool.space | Network hashrate, difficulty, next adjustment (progress, expected change, date), block height, fees |
+| CoinGecko | BTC and GOMINING prices with 24h change and market cap |
 
 Results are cached for 5 minutes. The refresh button skips the cache.
 
@@ -94,6 +101,9 @@ claude mcp add gomining -e GOMINING_TOKEN=your-token -- node /path/to/atlas/gomi
 | `gomining_upgrade_rates` | Valuation and upgrade cost tables per W/TH |
 | `gomining_efficiency_curve` | Net per TH at 12–20 W/TH and the break-even efficiency |
 | `gomining_calculate_earnings` | Daily and period net in USD, sats and BTC, payback and annual return |
+| `gomining_miner_roi` | Payback and annual return of every miner for sale |
+| `gomining_upgrade_advisor` | Cost vs electricity saved for each W/TH upgrade step |
+| `gomining_network_stats` | Bitcoin network stats and BTC/GOMINING prices |
 | `gomining_payout_history` | Recorded payout days |
 | `gomining_api_request` | Any `https://api.gomining.com/api/...` endpoint, with your token |
 | `gomining_status` | Token set, writes allowed, live or sample data |

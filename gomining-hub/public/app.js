@@ -17,21 +17,22 @@ const day = (iso) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric
 const time = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
 
-const state = { market: null, history: [], efficiency: Number(store.get('efficiency')) || 15 };
+const state = { market: null, history: [], efficiency: Number(store.get('efficiency')) || 15, historyMetric: store.get('historyMetric') || 'sats' };
+const compact = (value, digits = 1) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: digits }).format(value);
+const pct = (value, digits = 2) => `${value > 0 ? '+' : ''}${num(value, digits)}%`;
 
-// ---------- theme ----------
-function applyTheme(theme) {
-  if (theme) document.documentElement.dataset.theme = theme;
+// Writes a signed percentage (arrow shows direction, color shows good or bad) then a label.
+function setDelta(el, label, value, { upIsGood = true } = {}) {
+  el.replaceChildren();
+  if (value === null || value === undefined) { el.textContent = label || '\u00a0'; return; }
+  const delta = document.createElement('span');
+  if (value !== 0) {
+    const good = (value > 0) === upIsGood;
+    delta.className = `${value > 0 ? 'arrow-up' : 'arrow-down'} ${good ? 'good' : 'bad'}`;
+  }
+  delta.textContent = `${num(Math.abs(value), 2)}%`;
+  el.append(delta, document.createTextNode(label ? ` ${label}` : ''));
 }
-applyTheme(store.get('theme'));
-$('theme').addEventListener('click', () => {
-  const dark = document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark'
-    : matchMedia('(prefers-color-scheme: dark)').matches;
-  const next = dark ? 'light' : 'dark';
-  applyTheme(next);
-  store.set('theme', next);
-});
 
 // ---------- data ----------
 async function getJson(url) {
@@ -113,13 +114,107 @@ function renderHero() {
   status.hidden = b.netUsd >= 0;
   status.textContent = `Fees exceed the payout at ${state.efficiency} W/TH`;
 
-  $('t-btc').textContent = usd(income.btcPriceUsd, 0);
-  $('t-date').textContent = `Payout of ${day(income.payoutDate)}`;
-  $('t-gross').textContent = usdSmart(income.rewardUsdPerThDay);
-  $('t-gross-sats').textContent = `${sats(income.rewardSatsPerThDay)} per day`;
-  $('t-kwh').textContent = `${usd(income.electricityKwhPriceUsd, 3)}/kWh`;
-  $('t-elec').textContent = `${usdSmart(b.electricityUsd)} per TH per day at ${state.efficiency} W/TH`;
-  $('t-service').textContent = usdSmart(income.serviceUsdPerThDay);
+  renderKpis(b);
+}
+
+function renderKpis(b) {
+  const m = state.market;
+  const income = m.income;
+  const btc = m.prices?.btc;
+  $('k-btc').textContent = usd(btc?.usd ?? income.btcPriceUsd, 0);
+  if (btc) setDelta($('k-btc-meta'), '24h', btc.change24hPct);
+  else $('k-btc-meta').textContent = `GoMining payout rate, ${day(income.payoutDate)}`;
+
+  const gmt = m.prices?.gomining;
+  $('k-gmt').textContent = gmt ? usd(gmt.usd, gmt.usd < 1 ? 4 : 2) : '—';
+  if (gmt) setDelta($('k-gmt-meta'), gmt.marketCapUsd ? `24h · cap $${compact(gmt.marketCapUsd)}` : '24h', gmt.change24hPct);
+  else $('k-gmt-meta').textContent = 'Price feed unavailable';
+
+  $('k-hashprice').textContent = `${usd(m.hashprice.usdPerPhDay, 2)}`;
+  $('k-hashprice-meta').textContent = `per PH per day · ${num(m.hashprice.satsPerPhDay)} sats`;
+
+  $('k-gross').textContent = usdSmart(income.rewardUsdPerThDay);
+  if (m.payoutVsAveragePct !== null) setDelta($('k-gross-meta'), `vs 365-day avg · ${sats(income.rewardSatsPerThDay)}`, m.payoutVsAveragePct);
+  else $('k-gross-meta').textContent = `${sats(income.rewardSatsPerThDay)} per day`;
+
+  const net = m.network;
+  $('k-hashrate').textContent = net?.hashrateEhs ? `${num(net.hashrateEhs, 0)} EH/s` : '—';
+  $('k-hashrate-meta').textContent = net?.blockHeight ? `Block ${num(net.blockHeight)}` : 'Network feed unavailable';
+  $('k-diff').textContent = net?.difficultyT ? `${num(net.difficultyT, 1)} T` : '—';
+  if (net?.nextAdjustment?.estimatedChangePct !== null && net?.nextAdjustment?.estimatedChangePct !== undefined) {
+    // Rising difficulty means less BTC per TH, so up is bad here.
+    setDelta($('k-diff-meta'), 'next adjustment', net.nextAdjustment.estimatedChangePct, { upIsGood: false });
+  } else $('k-diff-meta').textContent = '\u00a0';
+
+  $('k-kwh').textContent = `${usd(income.electricityKwhPriceUsd, 3)}/kWh`;
+  $('k-kwh-meta').textContent = `${usdSmart(b.electricityUsd)} per TH per day at ${state.efficiency} W/TH`;
+  $('k-service').textContent = usdSmart(income.serviceUsdPerThDay);
+  $('k-service-meta').textContent = `per day · break-even at ${num(m.curve.breakEvenEfficiencyWth, 1)} W/TH`;
+}
+
+function renderNetwork() {
+  const body = $('network-body');
+  const net = state.market.network;
+  if (!net) {
+    body.replaceChildren(empty(`Bitcoin network data is unavailable right now${state.market.errors.network ? ` (${state.market.errors.network})` : ''}. It comes back by itself.`));
+    return;
+  }
+  const adj = net.nextAdjustment;
+  const frag = document.createDocumentFragment();
+  const top = document.createElement('div');
+  const change = document.createElement('p');
+  change.className = 'big-number';
+  change.textContent = adj.estimatedChangePct === null ? '—' : pct(adj.estimatedChangePct);
+  const sub = document.createElement('p');
+  sub.className = 'card-sub';
+  sub.textContent = adj.estimatedChangePct > 0 ? 'Expected difficulty rise: slightly fewer sats per TH after it' : 'Expected difficulty drop: slightly more sats per TH after it';
+  top.append(change, sub);
+  const meter = document.createElement('div');
+  meter.className = 'meter';
+  meter.setAttribute('role', 'meter');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', '100');
+  meter.setAttribute('aria-valuenow', String(adj.progressPct ?? 0));
+  meter.setAttribute('aria-label', 'Progress through the current difficulty period');
+  const fill = document.createElement('span');
+  fill.style.width = `${Math.min(100, Math.max(0, adj.progressPct ?? 0))}%`;
+  meter.appendChild(fill);
+  const stats = document.createElement('dl');
+  stats.className = 'stat-grid';
+  const add = (label, value) => {
+    const row = document.createElement('div');
+    const dt = document.createElement('dt'); dt.textContent = label;
+    const dd = document.createElement('dd'); dd.textContent = value;
+    row.append(dt, dd);
+    stats.appendChild(row);
+  };
+  add('Period progress', adj.progressPct === null ? '—' : `${num(adj.progressPct, 1)}%`);
+  add('Blocks to go', adj.remainingBlocks === null ? '—' : num(adj.remainingBlocks));
+  add('Expected on', adj.estimatedDate ? day(adj.estimatedDate) : '—');
+  add('Previous change', adj.previousChangePct === null ? '—' : pct(adj.previousChangePct));
+  add('Avg block time', adj.avgBlockMinutes === null ? '—' : `${num(adj.avgBlockMinutes, 1)} min`);
+  add('Block height', net.blockHeight ? num(net.blockHeight) : '—');
+  add('Network hashrate', net.hashrateEhs ? `${num(net.hashrateEhs, 1)} EH/s` : '—');
+  add('Fees (fast / 1h / eco)', net.feesSatVb.fastest === null ? '—' : `${net.feesSatVb.fastest} / ${net.feesSatVb.hour} / ${net.feesSatVb.economy} sat/vB`);
+  frag.append(top, meter, stats);
+  body.replaceChildren(frag);
+}
+
+function renderRoi() {
+  const rows = [...state.market.minerRoi].sort((a, b) => (a.paybackDays ?? Infinity) - (b.paybackDays ?? Infinity));
+  const best = state.market.fastestPayback;
+  const banner = $('roi-best');
+  banner.hidden = !best;
+  if (best) {
+    banner.replaceChildren();
+    const label = document.createElement('strong');
+    label.textContent = 'Fastest payback';
+    banner.append(label, document.createTextNode(` ${num(best.powerTh, best.powerTh < 1 ? 2 : 0)} TH at ${best.efficiencyWth} W/TH for ${usd(best.priceUsd, 2)}: ${num(best.paybackDays)} days · ${num(best.annualReturnPct, 1)}% a year`));
+  }
+  table($('roi-table'), ['Size (TH)', 'W/TH', 'Price', 'Per TH', 'Net / day', 'Sats / day', 'Payback', 'Per year'], rows.map((r) => [
+    num(r.powerTh, r.powerTh < 1 ? 2 : 0), r.efficiencyWth, usd(r.priceUsd, 2), usd(r.priceUsdPerTh, 2), usdSmart(r.netUsdDay), num(r.netSatsDay),
+    r.paybackDays ? `${num(r.paybackDays)} d` : 'never', `${num(r.annualReturnPct, 1)}%`,
+  ]), { highlight: (i) => best && rows[i] === best });
 }
 
 function renderSplit() {
@@ -215,39 +310,65 @@ function renderPrices() {
   table($('prices-table'), ['Size (TH)', 'W/TH', 'Price', 'Per TH'], presets.map((row) => [num(row.powerTh, row.powerTh < 1 ? 2 : 0), row.efficiencyWth, usd(row.priceUsd, 2), usd(row.priceUsdPerTh, 2)]));
 }
 
+const HISTORY_METRICS = [
+  { id: 'sats', label: 'Sats / TH', key: 'rewardSatsPerThDay', format: (v) => sats(v), tick },
+  { id: 'hashprice', label: 'Hashprice', key: 'hashpriceUsdPerPhDay', format: (v) => `${usd(v, 2)}/PH`, tick: (v) => usd(v, 0) },
+  { id: 'btc', label: 'BTC price', key: 'btcPriceUsd', format: (v) => usd(v, 0), tick: (v) => `$${compact(v)}` },
+  { id: 'hashrate', label: 'Hashrate', key: 'hashrateEhs', format: (v) => `${num(v, 0)} EH/s`, tick },
+  { id: 'gmt', label: 'GOMINING', key: 'gominingUsd', format: (v) => usd(v, 4), tick: (v) => usd(v, 2) },
+];
+
 function renderHistory() {
-  const rows = state.history;
+  const seg = $('history-metric');
+  if (!seg.childElementCount) {
+    for (const metric of HISTORY_METRICS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.dataset.metric = metric.id;
+      button.textContent = metric.label;
+      button.addEventListener('click', () => {
+        state.historyMetric = metric.id;
+        store.set('historyMetric', metric.id);
+        renderHistory();
+      });
+      seg.appendChild(button);
+    }
+  }
+  const metric = HISTORY_METRICS.find((m) => m.id === state.historyMetric) ?? HISTORY_METRICS[0];
+  for (const button of seg.children) button.setAttribute('aria-checked', String(button.dataset.metric === metric.id));
+
+  const rows = state.history.filter((row) => typeof row[metric.key] === 'number');
+  $('history-sub').textContent = `${metric.label}, recorded each day the dashboard fetches live data`;
   if (rows.length < 2) {
     $('history-chart').replaceChildren(empty(rows.length
-      ? `1 day recorded (${day(rows[0].date)}). The chart appears once there are two payout days.`
-      : 'Nothing recorded yet. While this dashboard runs with live data it saves one point per payout day.'));
+      ? `1 day recorded (${day(rows[0].date)}). The chart draws itself from the second day.`
+      : 'Nothing recorded for this metric yet. One point is saved per payout day.'));
   } else {
     lineChart($('history-chart'), {
       xLabels: rows.map((row) => new Date(row.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })),
-      series: [{ name: 'Sats per TH', color: SERIES[0], values: rows.map((row) => row.rewardSatsPerThDay) }],
-      format: (v) => sats(v),
-      tickFormat: tick,
+      series: [{ name: metric.label, color: SERIES[0], values: rows.map((row) => row[metric.key]) }],
+      format: metric.format,
+      tickFormat: metric.tick,
       xTooltip: (_label, i) => day(rows[i].date),
     });
   }
-  table($('history-table'), ['Date', 'Sats/TH', 'USD/TH', 'BTC price'], rows.map((row) => [day(row.date), num(row.rewardSatsPerThDay, 1), usdSmart(row.rewardUsdPerThDay), usd(row.btcPriceUsd, 0)]));
-}
-
-function renderUpgrades() {
-  const { valuationSteps, efficiencyUpgradeSteps } = state.market.upgrades;
-  const levels = [...new Set([...valuationSteps, ...efficiencyUpgradeSteps].map((step) => step.toLevelWth))].sort((a, b) => a - b);
-  if (!levels.length) {
-    $('upgrade-table').replaceChildren(empty('No upgrade prices available.'));
-    return;
-  }
-  table($('upgrade-table'), ['To W/TH', 'Upgrade cost per TH', 'Valuation step per TH'], levels.map((level) => [
-    level,
-    fmtStep(efficiencyUpgradeSteps.find((step) => step.toLevelWth === level)),
-    fmtStep(valuationSteps.find((step) => step.toLevelWth === level)),
+  table($('history-table'), ['Date', 'Sats/TH', 'Hashprice', 'BTC price', 'Hashrate', 'GOMINING'], state.history.map((row) => [
+    day(row.date), num(row.rewardSatsPerThDay, 1), row.hashpriceUsdPerPhDay ? usd(row.hashpriceUsdPerPhDay, 2) : '—', usd(row.btcPriceUsd, 0),
+    row.hashrateEhs ? `${num(row.hashrateEhs, 0)} EH/s` : '—', row.gominingUsd ? usd(row.gominingUsd, 4) : '—',
   ]));
 }
 
-const fmtStep = (step) => (step ? usd(step.priceUsdPerTh, 3) : '—');
+function renderAdvisor() {
+  const steps = state.market.upgradeAdvisor;
+  if (!steps.length) {
+    $('upgrade-table').replaceChildren(empty('No upgrade prices available.'));
+    return;
+  }
+  table($('upgrade-table'), ['Step', 'Cost per TH', 'Saves per TH / day', 'Pays back in'], steps.map((step) => [
+    `${step.fromWth} → ${step.toWth} W/TH`, usd(step.costUsdPerTh, 3), usdSmart(step.savingUsdPerThDay), step.paybackDays ? `${num(step.paybackDays)} days` : 'never',
+  ]));
+}
 
 function empty(message) {
   const div = document.createElement('div');
@@ -256,7 +377,7 @@ function empty(message) {
   return div;
 }
 
-function table(container, headers, rows) {
+function table(container, headers, rows, { highlight } = {}) {
   const t = document.createElement('table');
   const head = t.createTHead().insertRow();
   headers.forEach((label, i) => {
@@ -267,14 +388,15 @@ function table(container, headers, rows) {
     head.appendChild(th);
   });
   const body = t.createTBody();
-  for (const cells of rows) {
+  rows.forEach((cells, index) => {
     const tr = body.insertRow();
+    if (highlight?.(index)) tr.className = 'highlight';
     cells.forEach((value, i) => {
       const td = tr.insertCell();
       td.textContent = value;
       if (i > 0) td.className = 'num';
     });
-  }
+  });
   container.replaceChildren(t);
 }
 
@@ -284,9 +406,11 @@ function renderAll() {
   renderHero();
   renderSplit();
   renderCurve();
+  renderNetwork();
+  renderRoi();
   renderPrices();
+  renderAdvisor();
   renderHistory();
-  renderUpgrades();
 }
 
 // ---------- calculator ----------
