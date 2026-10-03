@@ -79,7 +79,8 @@ function renderSource() {
     showNotice('');
   } else {
     setSource('sample', 'Sample data');
-    const parts = Object.keys(m.errors).join(', ');
+    // Only GoMining's own parts fall back to sample data; network and prices just show as unavailable.
+    const parts = Object.keys(m.errors).filter((part) => ['income', 'presets', 'upgrades'].includes(part)).join(', ');
     showNotice(`GoMining's API couldn't be reached (${parts}), so this shows real GoMining figures captured ${day(m.sampleCapturedAt)} instead of today's. Refresh to try again.`);
   }
 }
@@ -458,6 +459,15 @@ $('efficiency').addEventListener('change', (event) => {
 });
 
 $('refresh').addEventListener('click', () => load({ refresh: true }));
+
+// Community calculator tabs: switch the embedded page and the "open in new tab" link together.
+for (const tab of $('embed-tabs').querySelectorAll('button')) {
+  tab.addEventListener('click', () => {
+    for (const other of $('embed-tabs').children) other.setAttribute('aria-checked', String(other === tab));
+    $('embed').src = tab.dataset.src;
+    $('embed-open').href = tab.dataset.src;
+  });
+}
 
 document.querySelectorAll('[data-table-toggle]').forEach((button) => {
   button.setAttribute('aria-pressed', 'false');

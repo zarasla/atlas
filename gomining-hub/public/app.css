@@ -189,6 +189,13 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 .legend-key { width: 14px; height: 2px; border-radius: 1px; }
 .legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
+/* Embedded community calculator */
+.embed-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.embed-actions .link-btn { text-decoration: none; padding: 6px 12px; }
+.embed-frame { border-radius: 12px; overflow: hidden; border: 1px solid var(--border-strong); background: #ffffff; box-shadow: 0 0 24px -8px rgba(61, 155, 255, 0.45); }
+.embed-frame iframe { display: block; width: 100%; height: 820px; border: 0; }
+@media (max-width: 560px) { .embed-frame iframe { height: 720px; } }
+
 /* Segmented control for the history metric */
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
 .seg button { border: 0; background: transparent; color: var(--ink-2); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }

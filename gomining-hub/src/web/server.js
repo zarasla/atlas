@@ -30,8 +30,9 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
-    // Google Fonts serves the Russo One headline face; everything else is same-origin only.
-    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // Google Fonts serves the Russo One headline face and gominingcalculator.com is embedded by name;
+    // everything else is same-origin only.
+    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-src https://www.gominingcalculator.com https://gominingcalculator.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };

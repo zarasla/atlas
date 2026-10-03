@@ -32,6 +32,27 @@
   <main class="wrap" id="main" aria-busy="true">
     <div class="notice" id="notice" hidden></div>
 
+    <section class="card embed-card" id="community-tools">
+      <header class="card-head">
+        <div>
+          <h2>GoMining Calculator</h2>
+          <p class="card-sub">Community tool by gominingcalculator.com, shown here with credit. Not run by The Goose's.</p>
+        </div>
+        <div class="embed-actions">
+          <div class="seg" role="radiogroup" aria-label="Calculator" id="embed-tabs">
+            <button type="button" role="radio" aria-checked="true" data-src="https://www.gominingcalculator.com/index.php">Rewards calculator</button>
+            <button type="button" role="radio" aria-checked="false" data-src="https://www.gominingcalculator.com/miner_wars.php">Miner Wars</button>
+          </div>
+          <a class="link-btn" id="embed-open" href="https://www.gominingcalculator.com/index.php" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
+        </div>
+      </header>
+      <div class="embed-frame">
+        <iframe id="embed" title="GoMining Calculator (gominingcalculator.com)" src="https://www.gominingcalculator.com/index.php"
+          loading="lazy" referrerpolicy="no-referrer"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+      </div>
+    </section>
+
     <div class="filters" role="group" aria-label="Filters">
       <label class="field inline">
         <span>Miner efficiency</span>
