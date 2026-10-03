@@ -1,0 +1,7 @@
+# Caddy site block for GoMining Hub. Caddy gets and renews the HTTPS certificate itself.
+# install.sh writes this with your domain to /etc/caddy/sites/gomining-hub.caddy.
+__DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:4173
+	header Strict-Transport-Security "max-age=31536000"
+}

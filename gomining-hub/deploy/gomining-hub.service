@@ -1,0 +1,40 @@
+# systemd unit for the GoMining Hub dashboard. Installed by deploy/install.sh.
+[Unit]
+Description=GoMining Hub dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gominghub
+Group=gominghub
+WorkingDirectory=/opt/gomining-hub
+ExecStart=/usr/bin/env node src/web/server.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=4173
+# Payout history lives outside the code so redeploys never touch it.
+Environment=GOMINING_HISTORY_PATH=/var/lib/gomining-hub/history.json
+# MCP_ACCESS_KEY (and optionally GOMINING_TOKEN) live here, root-only, never in the repo.
+EnvironmentFile=-/etc/gomining-hub.env
+StateDirectory=gomining-hub
+Restart=on-failure
+RestartSec=5
+
+# Hardening: the dashboard only needs to read its code, write its history and make outbound HTTPS.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gomining-hub
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,531 @@
+{
+  "note": "Offline fallback: real GoMining public API values captured 2026-09-09. Shown with a 'sample data' badge whenever the live API is unreachable.",
+  "capturedAt": "2026-09-09T12:03:05.090Z",
+  "income": {
+    "createdAt": "2026-09-09T03:31:04.474Z",
+    "btcCourseInUsd": 78862.65350442,
+    "totalIncomePerThToday": 0.038951242332164196,
+    "totalIncomePerTh": 13.451458609344947,
+    "c1ValuePerThPerWtToday": 0.0012,
+    "c2ValuePerThToday": 0.0089,
+    "c3ValuePerThToday": 0,
+    "c4ValuePerThToday": 0
+  },
+  "presets": [
+    {
+      "power": 0.75,
+      "energyEfficiency": 12,
+      "priceUsdt": 12.99
+    },
+    {
+      "power": 1,
+      "energyEfficiency": 12,
+      "priceUsdt": 18.99
+    },
+    {
+      "power": 2,
+      "energyEfficiency": 12,
+      "priceUsdt": 37.79
+    },
+    {
+      "power": 4,
+      "energyEfficiency": 12,
+      "priceUsdt": 75.19
+    },
+    {
+      "power": 8,
+      "energyEfficiency": 12,
+      "priceUsdt": 149.99
+    },
+    {
+      "power": 16,
+      "energyEfficiency": 12,
+      "priceUsdt": 297.99
+    },
+    {
+      "power": 32,
+      "energyEfficiency": 12,
+      "priceUsdt": 592.99
+    },
+    {
+      "power": 48,
+      "energyEfficiency": 12,
+      "priceUsdt": 884.99
+    },
+    {
+      "power": 64,
+      "energyEfficiency": 12,
+      "priceUsdt": 1172.99
+    },
+    {
+      "power": 96,
+      "energyEfficiency": 12,
+      "priceUsdt": 1750.99
+    },
+    {
+      "power": 128,
+      "energyEfficiency": 12,
+      "priceUsdt": 2322.99
+    },
+    {
+      "power": 192,
+      "energyEfficiency": 12,
+      "priceUsdt": 3465.99
+    },
+    {
+      "power": 256,
+      "energyEfficiency": 12,
+      "priceUsdt": 4597.99
+    },
+    {
+      "power": 384,
+      "energyEfficiency": 12,
+      "priceUsdt": 6861.99
+    },
+    {
+      "power": 512,
+      "energyEfficiency": 12,
+      "priceUsdt": 9102.99
+    },
+    {
+      "power": 768,
+      "energyEfficiency": 12,
+      "priceUsdt": 13584.99
+    },
+    {
+      "power": 1024,
+      "energyEfficiency": 12,
+      "priceUsdt": 18020.99
+    },
+    {
+      "power": 1536,
+      "energyEfficiency": 12,
+      "priceUsdt": 26894.99
+    },
+    {
+      "power": 2560,
+      "energyEfficiency": 12,
+      "priceUsdt": 44597.99
+    },
+    {
+      "power": 3584,
+      "energyEfficiency": 12,
+      "priceUsdt": 62121.99
+    },
+    {
+      "power": 5000,
+      "energyEfficiency": 12,
+      "priceUsdt": 86228.99
+    },
+    {
+      "power": 1,
+      "energyEfficiency": 15,
+      "priceUsdt": 14.99
+    },
+    {
+      "power": 2,
+      "energyEfficiency": 15,
+      "priceUsdt": 27.99
+    },
+    {
+      "power": 4,
+      "energyEfficiency": 15,
+      "priceUsdt": 55.99
+    },
+    {
+      "power": 8,
+      "energyEfficiency": 15,
+      "priceUsdt": 109.99
+    },
+    {
+      "power": 16,
+      "energyEfficiency": 15,
+      "priceUsdt": 216.99
+    },
+    {
+      "power": 32,
+      "energyEfficiency": 15,
+      "priceUsdt": 429.99
+    },
+    {
+      "power": 48,
+      "energyEfficiency": 15,
+      "priceUsdt": 637.99
+    },
+    {
+      "power": 64,
+      "energyEfficiency": 15,
+      "priceUsdt": 841.99
+    },
+    {
+      "power": 96,
+      "energyEfficiency": 15,
+      "priceUsdt": 1250.99
+    },
+    {
+      "power": 128,
+      "energyEfficiency": 15,
+      "priceUsdt": 1650.99
+    },
+    {
+      "power": 192,
+      "energyEfficiency": 15,
+      "priceUsdt": 2451.99
+    },
+    {
+      "power": 256,
+      "energyEfficiency": 15,
+      "priceUsdt": 3235.99
+    },
+    {
+      "power": 384,
+      "energyEfficiency": 15,
+      "priceUsdt": 4804.99
+    },
+    {
+      "power": 512,
+      "energyEfficiency": 15,
+      "priceUsdt": 6342.99
+    },
+    {
+      "power": 768,
+      "energyEfficiency": 15,
+      "priceUsdt": 9419.99
+    },
+    {
+      "power": 1024,
+      "energyEfficiency": 15,
+      "priceUsdt": 12434.99
+    },
+    {
+      "power": 1536,
+      "energyEfficiency": 15,
+      "priceUsdt": 18465.99
+    },
+    {
+      "power": 2560,
+      "energyEfficiency": 15,
+      "priceUsdt": 30469.99
+    },
+    {
+      "power": 3584,
+      "energyEfficiency": 15,
+      "priceUsdt": 42233.99
+    },
+    {
+      "power": 5000,
+      "energyEfficiency": 15,
+      "priceUsdt": 58333.99
+    }
+  ],
+  "upgrades": {
+    "powerUpgradePriceConfig": [
+      {
+        "toLevel": 12,
+        "priceUsd": 2.098
+      },
+      {
+        "toLevel": 13,
+        "priceUsd": 2.098
+      },
+      {
+        "toLevel": 14,
+        "priceUsd": 2.098
+      },
+      {
+        "toLevel": 15,
+        "priceUsd": 0.772
+      },
+      {
+        "toLevel": 16,
+        "priceUsd": 0.772
+      },
+      {
+        "toLevel": 17,
+        "priceUsd": 0.772
+      },
+      {
+        "toLevel": 18,
+        "priceUsd": 0.772
+      },
+      {
+        "toLevel": 19,
+        "priceUsd": 0.772
+      },
+      {
+        "toLevel": 20,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 21,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 22,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 23,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 24,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 25,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 26,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 27,
+        "priceUsd": 0.387
+      },
+      {
+        "toLevel": 28,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 29,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 30,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 31,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 32,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 33,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 34,
+        "priceUsd": 0.379
+      },
+      {
+        "toLevel": 35,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 36,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 37,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 38,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 39,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 40,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 41,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 42,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 43,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 44,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 45,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 46,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 47,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 48,
+        "priceUsd": 0.09
+      },
+      {
+        "toLevel": 49,
+        "priceUsd": 0.09
+      }
+    ],
+    "energyEfficiencyUpgradePriceConfig": [
+      {
+        "toLevel": 12,
+        "priceUsd": 2.667
+      },
+      {
+        "toLevel": 13,
+        "priceUsd": 2.667
+      },
+      {
+        "toLevel": 14,
+        "priceUsd": 2.667
+      },
+      {
+        "toLevel": 15,
+        "priceUsd": 1.1
+      },
+      {
+        "toLevel": 16,
+        "priceUsd": 1.1
+      },
+      {
+        "toLevel": 17,
+        "priceUsd": 1.1
+      },
+      {
+        "toLevel": 18,
+        "priceUsd": 1.1
+      },
+      {
+        "toLevel": 19,
+        "priceUsd": 1.1
+      },
+      {
+        "toLevel": 20,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 21,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 22,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 23,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 24,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 25,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 26,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 27,
+        "priceUsd": 0.999
+      },
+      {
+        "toLevel": 28,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 29,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 30,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 31,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 32,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 33,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 34,
+        "priceUsd": 0.5
+      },
+      {
+        "toLevel": 35,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 36,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 37,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 38,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 39,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 40,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 41,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 42,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 43,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 44,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 45,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 46,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 47,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 48,
+        "priceUsd": 0.1
+      },
+      {
+        "toLevel": 49,
+        "priceUsd": 0.1
+      }
+    ]
+  }
+}
