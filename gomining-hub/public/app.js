@@ -470,6 +470,8 @@ function legendInto(container, items) {
 
 function renderCalculator() {
   if (!state.market) return;
+  // Show the rate an empty electricity box falls back to.
+  $('gc-form').elements.kwhPriceUsd.placeholder = `GoMining rate: ${usd(state.market.income.electricityKwhPriceUsd, 3)}`;
   const v = formValues();
   const income = state.market.income;
   const gmt = state.market.prices?.gomining?.usd;
