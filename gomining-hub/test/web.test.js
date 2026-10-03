@@ -43,3 +43,11 @@ test('serves the dashboard and refuses paths outside public/', async () => {
   assert.equal((await fetch(`${base}/api/nope`)).status, 404);
   assert.equal((await fetch(`${base}/api/market`, { method: 'POST' })).status, 405);
 });
+
+test('serves the shared calculation module to the browser calculator', async () => {
+  const response = await fetch(`${base}/lib/calc.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /javascript/);
+  assert.match(await response.text(), /export function rewardsBreakdown/);
+  assert.equal((await fetch(`${base}/lib/market.js`)).status, 404);
+});

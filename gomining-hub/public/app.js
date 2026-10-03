@@ -1,4 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
+import { findListedPrice, investmentPlan, listedPricePerTh, rewardsBreakdown } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -51,7 +52,6 @@ async function load({ refresh = false } = {}) {
     state.history = history.rows ?? [];
     renderSource();
     renderAll();
-    calculate();
   } catch (error) {
     setSource('error', 'Dashboard server unreachable');
     showNotice(`Couldn't load data: ${error.message}. Is the dashboard server running?`);
@@ -404,6 +404,7 @@ function table(container, headers, rows, { highlight } = {}) {
 function renderAll() {
   if (!state.market) return;
   renderEfficiencyOptions();
+  renderCalculator();
   renderHero();
   renderSplit();
   renderCurve();
@@ -414,40 +415,123 @@ function renderAll() {
   renderHistory();
 }
 
-// ---------- calculator ----------
-let calcTimer;
-let calcSeq = 0;
-async function calculate() {
-  const form = $('calc');
-  const data = new FormData(form);
-  const params = new URLSearchParams({ powerTh: data.get('powerTh'), efficiencyWth: data.get('efficiencyWth'), days: data.get('days') });
-  if (Number(data.get('priceUsd')) > 0) params.set('priceUsd', data.get('priceUsd'));
-  if (data.get('average')) params.set('average', '1');
-  if (!form.checkValidity()) return;
-  const seq = ++calcSeq;
-  try {
-    const r = await getJson(`/api/earnings?${params}`);
-    if (seq !== calcSeq) return;
-    $('c-day').textContent = usdSmart(r.perDay.netUsd);
-    $('c-day').classList.toggle('neg', r.perDay.netUsd < 0);
-    $('c-day-sats').textContent = `${sats(r.perDay.netSats)} · gross ${usdSmart(r.perDay.grossUsd)}`;
-    $('c-period-label').textContent = `Net over ${num(r.period.days)} days`;
-    $('c-period').textContent = `${usdSmart(r.period.netUsd)} · ${num(r.period.netBtc, 6)} BTC`;
-    $('c-fees').textContent = usdSmart(r.period.feesUsd);
-    $('c-payback').textContent = r.payback ? (r.payback.days ? `${num(r.payback.days)} days` : 'Never at current rates') : 'Add a price';
-    $('c-apr').textContent = r.payback ? `${num(r.payback.annualReturnPct, 1)}%` : '—';
-    const priceNote = r.priceSource === 'GoMining listed price' ? `Using GoMining's listed price of ${usd(r.payback.priceUsd, 2)}. ` : '';
-    $('c-note').textContent = `${priceNote}${r.input.rewardBasis === 'today' ? "Today's payout" : '365-day average payout'}${r.dataSource === 'sample' ? ' from sample data' : ''}. Excludes fee discounts and future BTC price or difficulty changes.`;
-  } catch (error) {
-    if (seq === calcSeq) $('c-note').textContent = `Couldn't calculate: ${error.message}`;
+// ---------- Goose Calculator ----------
+state.gcMode = store.get('gcMode') === 'plan' ? 'plan' : 'rewards';
+const PERIOD_LABELS = { day: 'Day', week: 'Week', month: 'Month', year: 'Year' };
+
+function setMode(mode) {
+  state.gcMode = mode;
+  store.set('gcMode', mode);
+  for (const button of $('gc-mode').children) button.setAttribute('aria-checked', String(button.dataset.mode === mode));
+  for (const field of document.querySelectorAll('#gc-form [data-only]')) field.hidden = field.dataset.only !== mode;
+  $('gc-rewards').hidden = mode !== 'rewards';
+  $('gc-plan').hidden = mode !== 'plan';
+  $('gc-form').elements.powerTh.closest('label').firstElementChild.textContent = mode === 'plan' ? 'Starting power (TH)' : 'Power (TH)';
+  renderCalculator();
+}
+
+function formValues() {
+  const f = $('gc-form').elements;
+  const n = (name) => (f[name].value === '' ? undefined : Number(f[name].value));
+  return {
+    powerTh: n('powerTh') ?? 0,
+    efficiencyWth: n('efficiencyWth'),
+    discountPct: n('discountPct') ?? 0,
+    priceUsd: n('priceUsd'),
+    monthlyUsd: n('monthlyUsd') ?? 0,
+    months: n('months') ?? 12,
+    pricePerThUsd: n('pricePerThUsd'),
+    reinvest: f.reinvest.checked,
+    useAverageReward: f.average.checked,
+  };
+}
+
+function legendInto(container, items) {
+  container.replaceChildren();
+  for (const [name, color] of items) {
+    const item = document.createElement('span');
+    item.className = 'legend-item';
+    const key = document.createElement('span');
+    key.className = 'legend-key';
+    key.style.background = color;
+    item.append(key, document.createTextNode(name));
+    container.appendChild(item);
   }
 }
 
-$('calc').addEventListener('input', () => {
-  clearTimeout(calcTimer);
-  calcTimer = setTimeout(calculate, 200);
+function renderCalculator() {
+  if (!state.market) return;
+  const v = formValues();
+  const income = state.market.income;
+  const gmt = state.market.prices?.gomining?.usd;
+  const basis = v.useAverageReward ? '365-day average payout' : "today's payout";
+  const sample = state.market.sources.income === 'sample' ? ' (sample data)' : '';
+  try {
+    if (!(v.efficiencyWth > 0)) throw new Error('Enter an efficiency in W/TH.');
+    if (state.gcMode === 'rewards') {
+      if (!(v.powerTh > 0)) throw new Error('Enter your power in TH.');
+      const listed = v.priceUsd ? null : findListedPrice(state.market.presets, v.powerTh, v.efficiencyWth);
+      const r = rewardsBreakdown(income, { ...v, priceUsd: v.priceUsd ?? listed ?? undefined, gominingUsd: gmt });
+      const d = r.periods.day;
+      const m = r.periods.month;
+      $('gc-day').textContent = usdSmart(d.netUsd);
+      $('gc-day').classList.toggle('neg', d.netUsd < 0);
+      $('gc-day-sub').textContent = `${num(d.netSats)} sats${d.netGomining !== null ? ` · ${num(d.netGomining, 2)} GOMINING` : ''}`;
+      $('gc-month').textContent = usdSmart(m.netUsd);
+      $('gc-month').classList.toggle('neg', m.netUsd < 0);
+      $('gc-month-sub').textContent = `${num(m.netBtc, 8)} BTC`;
+      $('gc-payback').textContent = r.payback ? (r.payback.days ? `${num(r.payback.days)} d` : 'Never') : '—';
+      $('gc-payback-sub').textContent = r.payback
+        ? `${num(r.payback.annualReturnPct, 1)}% a year on ${usd(r.payback.priceUsd, 2)}${listed ? ' (listed price)' : ''}`
+        : 'Add the price you paid';
+      // The GOMINING column only appears when the token price feed answered.
+      const withGmt = d.netGomining !== null;
+      table($('gc-table'), ['Period', 'Gross', 'Electricity', 'Service', 'Discount', 'Net USD', 'Net BTC', 'Net sats', ...(withGmt ? ['GOMINING'] : [])],
+        Object.entries(r.periods).map(([key, p]) => [
+          PERIOD_LABELS[key], usdSmart(p.grossUsd), `−${usdSmart(p.electricityUsd)}`, `−${usdSmart(p.serviceUsd)}`, p.discountUsd ? `+${usdSmart(p.discountUsd)}` : '—',
+          usdSmart(p.netUsd), num(p.netBtc, 8), num(p.netSats), ...(withGmt ? [num(p.netGomining, 2)] : []),
+        ]));
+      $('gc-note').textContent = `${v.powerTh} TH at ${v.efficiencyWth} W/TH, ${num(r.input.discountPct, 1)}% maintenance discount, ${basis}${sample}. Rates held constant; BTC price and difficulty will move.`;
+    } else {
+      const listedPerTh = listedPricePerTh(state.market.presets, v.efficiencyWth);
+      const pricePerThUsd = v.pricePerThUsd ?? listedPerTh;
+      if (!pricePerThUsd) throw new Error(`GoMining doesn't list miners at ${v.efficiencyWth} W/TH: enter a price per TH.`);
+      const plan = investmentPlan(income, { startTh: v.powerTh, efficiencyWth: v.efficiencyWth, monthlyUsd: v.monthlyUsd, months: v.months, pricePerThUsd, reinvest: v.reinvest, discountPct: v.discountPct });
+      const sum = plan.summary;
+      $('gp-th').textContent = `${num(sum.finalTh, 1)} TH`;
+      $('gp-th-sub').textContent = `Earning ${usdSmart(sum.monthlyIncomeUsdAtEnd)} a month by then`;
+      $('gp-earned').textContent = usdSmart(sum.earnedUsd);
+      $('gp-earned-sub').textContent = `${num(sum.earnedBtc, 6)} BTC · invested ${usd(sum.investedUsd, 0)}${sum.reinvestedUsd ? ` · ${usd(sum.reinvestedUsd, 0)} reinvested` : ''}`;
+      $('gp-break').textContent = sum.breakEvenMonth ? `Month ${sum.breakEvenMonth}` : 'Not yet';
+      $('gp-break-sub').textContent = sum.breakEvenMonth ? 'Total earned passes total invested' : `Not within ${plan.rows.length} months at today's rates`;
+      legendInto($('gp-legend'), [['Total earned', SERIES[0]], ['Total invested', SERIES[1]]]);
+      lineChart($('gp-chart'), {
+        xLabels: plan.rows.map((row) => `M${row.month}`),
+        series: [
+          { name: 'Earned', color: SERIES[0], values: plan.rows.map((row) => row.earnedUsd) },
+          { name: 'Invested', color: SERIES[1], values: plan.rows.map((row) => row.investedUsd) },
+        ],
+        format: (value) => usd(value, 0),
+        tickFormat: (value) => `$${compact(value)}`,
+        xTitle: 'Month',
+        xTooltip: (_label, i) => `Month ${plan.rows[i].month} · ${num(plan.rows[i].th, 1)} TH`,
+        zeroBased: true,
+      });
+      table($('gp-table'), ['Month', 'TH', 'Net this month', 'Total earned', 'Total invested'],
+        plan.rows.map((row) => [row.month, num(row.th, 2), usd(row.netUsdMonth, 2), usd(row.earnedUsd, 2), usd(row.investedUsd, 2)]));
+      $('gc-note').textContent = `Buying at ${usd(pricePerThUsd, 2)} per TH${v.pricePerThUsd ? '' : ' (GoMining listed price)'}, ${v.efficiencyWth} W/TH, ${num(v.discountPct, 1)}% discount, ${basis}${sample}. A simulation at constant rates, not a forecast.`;
+    }
+  } catch (error) {
+    $('gc-note').textContent = error.message;
+  }
+}
+
+$('gc-form').addEventListener('input', () => {
+  clearTimeout(state.gcTimer);
+  state.gcTimer = setTimeout(renderCalculator, 120);
 });
-$('calc').addEventListener('submit', (event) => event.preventDefault());
+$('gc-form').addEventListener('submit', (event) => event.preventDefault());
+for (const button of $('gc-mode').children) button.addEventListener('click', () => setMode(button.dataset.mode));
 
 // ---------- controls ----------
 $('efficiency').addEventListener('change', (event) => {
@@ -459,15 +543,6 @@ $('efficiency').addEventListener('change', (event) => {
 });
 
 $('refresh').addEventListener('click', () => load({ refresh: true }));
-
-// Community calculator tabs: switch the embedded page and the "open in new tab" link together.
-for (const tab of $('embed-tabs').querySelectorAll('button')) {
-  tab.addEventListener('click', () => {
-    for (const other of $('embed-tabs').children) other.setAttribute('aria-checked', String(other === tab));
-    $('embed').src = tab.dataset.src;
-    $('embed-open').href = tab.dataset.src;
-  });
-}
 
 document.querySelectorAll('[data-table-toggle]').forEach((button) => {
   button.setAttribute('aria-pressed', 'false');
@@ -490,4 +565,5 @@ new ResizeObserver(([entry]) => {
   resizeTimer = setTimeout(renderAll, 120);
 }).observe($('main'));
 
+setMode(state.gcMode);
 load();

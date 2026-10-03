@@ -32,25 +32,52 @@
   <main class="wrap" id="main" aria-busy="true">
     <div class="notice" id="notice" hidden></div>
 
-    <section class="card embed-card" id="community-tools">
+    <section class="card goose-calc" id="calculator">
       <header class="card-head">
         <div>
-          <h2>GoMining Calculator</h2>
-          <p class="card-sub">Community tool by gominingcalculator.com, shown here with credit. Not run by The Goose's.</p>
+          <h2>Goose Calculator</h2>
+          <p class="card-sub" id="gc-sub">Live GoMining payout and fees, your own miner and discount</p>
         </div>
-        <div class="embed-actions">
-          <div class="seg" role="radiogroup" aria-label="Calculator" id="embed-tabs">
-            <button type="button" role="radio" aria-checked="true" data-src="https://www.gominingcalculator.com/index.php">Rewards calculator</button>
-            <button type="button" role="radio" aria-checked="false" data-src="https://www.gominingcalculator.com/miner_wars.php">Miner Wars</button>
-          </div>
-          <a class="link-btn" id="embed-open" href="https://www.gominingcalculator.com/index.php" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
+        <div class="seg" role="radiogroup" aria-label="Calculator mode" id="gc-mode">
+          <button type="button" role="radio" aria-checked="true" data-mode="rewards">Rewards</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="plan">Investment plan</button>
         </div>
       </header>
-      <div class="embed-frame">
-        <iframe id="embed" title="GoMining Calculator (gominingcalculator.com)" src="https://www.gominingcalculator.com/index.php"
-          loading="lazy" referrerpolicy="no-referrer"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+
+      <form id="gc-form" class="gc-form" autocomplete="off">
+        <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
+        <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
+        <label class="field"><span>Maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="field" data-only="rewards"><span>Price paid (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Monthly budget (USD)</span><input name="monthlyUsd" type="number" min="0" step="any" value="100" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Months</span><input name="months" type="number" min="1" max="120" step="1" value="24" inputmode="numeric"></label>
+        <label class="field" data-only="plan"><span>Price per TH (USD)</span><input name="pricePerThUsd" type="number" min="0" step="any" placeholder="Listed" inputmode="decimal"></label>
+        <label class="check" data-only="plan"><input name="reinvest" type="checkbox"> Reinvest rewards every month</label>
+        <label class="check"><input name="average" type="checkbox"> Use 365-day average payout instead of today's</label>
+      </form>
+      <p class="fine gc-hint">Discount: your VIP maintenance discount and/or the saving from paying fees in GOMINING, as a percentage of electricity + service.</p>
+
+      <div id="gc-rewards" aria-live="polite">
+        <div class="gc-headline">
+          <div><p class="eyebrow">Net per day</p><p class="calc-big" id="gc-day">—</p><p class="calc-sub" id="gc-day-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Net per month</p><p class="calc-big" id="gc-month">—</p><p class="calc-sub" id="gc-month-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Payback</p><p class="calc-big" id="gc-payback">—</p><p class="calc-sub" id="gc-payback-sub">&nbsp;</p></div>
+        </div>
+        <div class="table-wrap" id="gc-table"></div>
       </div>
+
+      <div id="gc-plan" hidden aria-live="polite">
+        <div class="gc-headline">
+          <div><p class="eyebrow">Hashrate at the end</p><p class="calc-big" id="gp-th">—</p><p class="calc-sub" id="gp-th-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Total earned</p><p class="calc-big" id="gp-earned">—</p><p class="calc-sub" id="gp-earned-sub">&nbsp;</p></div>
+          <div><p class="eyebrow">Break-even</p><p class="calc-big" id="gp-break">—</p><p class="calc-sub" id="gp-break-sub">&nbsp;</p></div>
+        </div>
+        <div class="legend" id="gp-legend"></div>
+        <div class="chart" id="gp-chart"></div>
+        <button class="link-btn spaced" type="button" data-table-toggle="gp">Monthly table</button>
+        <div class="table-wrap scroll" id="gp-table" hidden></div>
+      </div>
+      <p class="fine" id="gc-note"></p>
     </section>
 
     <div class="filters" role="group" aria-label="Filters">
@@ -117,34 +144,6 @@
         </header>
         <div id="network-body"></div>
       </article>
-    </section>
-
-    <section class="card calc">
-      <header class="card-head">
-        <div>
-          <h2>Earnings calculator</h2>
-          <p class="card-sub">Today's rates held constant</p>
-        </div>
-      </header>
-      <div class="calc-body">
-        <form id="calc" class="calc-form" autocomplete="off">
-          <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0.01" step="any" value="16" required inputmode="decimal"></label>
-          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" required inputmode="decimal"></label>
-          <label class="field"><span>Days</span><input name="days" type="number" min="1" max="3650" step="1" value="30" required inputmode="numeric"></label>
-          <label class="field"><span>Price (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
-          <label class="check"><input name="average" type="checkbox"> Use 365-day average payout</label>
-        </form>
-        <div class="calc-out" id="calc-out" aria-live="polite">
-          <div class="calc-main"><p class="eyebrow">Net per day</p><p class="calc-big" id="c-day">—</p><p class="calc-sub" id="c-day-sats">&nbsp;</p></div>
-          <dl class="calc-list">
-            <div><dt id="c-period-label">Net over 30 days</dt><dd id="c-period">—</dd></div>
-            <div><dt>Fees over period</dt><dd id="c-fees">—</dd></div>
-            <div><dt>Payback</dt><dd id="c-payback">—</dd></div>
-            <div><dt>Annual return</dt><dd id="c-apr">—</dd></div>
-          </dl>
-          <p class="fine" id="c-note"></p>
-        </div>
-      </div>
     </section>
 
     <section class="card">

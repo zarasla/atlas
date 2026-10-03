@@ -21,6 +21,8 @@ import { fromEnv } from '../core/config.js';
 import { createServer as createMcpServer } from '../mcp/server.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
+// The browser calculator imports the exact same maths the server and MCP tools use.
+const CALC_MODULE = join(dirname(fileURLToPath(import.meta.url)), '..', 'core', 'calc.js');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
@@ -30,9 +32,8 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
-    // Google Fonts serves the Russo One headline face and gominingcalculator.com is embedded by name;
-    // everything else is same-origin only.
-    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-src https://www.gominingcalculator.com https://gominingcalculator.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // Google Fonts serves the Russo One headline face; everything else is same-origin only.
+    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
@@ -128,6 +129,7 @@ export function createApp({ market, mcp }) {
         return Array.isArray(result) ? send(res, result[0], result[1]) : send(res, 200, result);
       }
       if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
+      if (url.pathname === '/lib/calc.js') return send(res, 200, await readFile(CALC_MODULE), TYPES['.js']);
 
       // Static files, confined to public/.
       const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');

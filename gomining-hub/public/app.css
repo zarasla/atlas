@@ -189,12 +189,15 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 .legend-key { width: 14px; height: 2px; border-radius: 1px; }
 .legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
-/* Embedded community calculator */
-.embed-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.embed-actions .link-btn { text-decoration: none; padding: 6px 12px; }
-.embed-frame { border-radius: 12px; overflow: hidden; border: 1px solid var(--border-strong); background: #ffffff; box-shadow: 0 0 24px -8px rgba(61, 155, 255, 0.45); }
-.embed-frame iframe { display: block; width: 100%; height: 820px; border: 0; }
-@media (max-width: 560px) { .embed-frame iframe { height: 720px; } }
+/* Goose Calculator */
+.goose-calc { border-color: var(--border-strong); background: radial-gradient(600px 260px at 100% 0%, rgba(247, 181, 0, 0.08), transparent 70%), linear-gradient(180deg, #0f2140, #0a1426); }
+.gc-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.gc-hint { margin-top: 8px; }
+.gc-headline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0 6px; padding-top: 18px; border-top: 1px solid var(--border); }
+.gc-headline .calc-big.neg { color: var(--critical); }
+#gc-table td:first-child, #gc-table th:first-child { white-space: nowrap; }
+@media (max-width: 900px) { .gc-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .gc-headline { grid-template-columns: minmax(0, 1fr); } }
 
 /* Segmented control for the history metric */
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }

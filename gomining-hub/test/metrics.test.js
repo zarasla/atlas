@@ -81,3 +81,33 @@ test('without external providers those parts are marked unavailable', async () =
   assert.equal(data.network, null);
   assert.equal(data.sources.prices, 'unavailable');
 });
+
+test('rewardsBreakdown covers every period and applies the maintenance discount', async () => {
+  const { rewardsBreakdown, investmentPlan, listedPricePerTh } = await import('../src/core/calc.js');
+  const plain = rewardsBreakdown(market, { powerTh: 16, efficiencyWth: 15, gominingUsd: 0.4 });
+  assert.equal(plain.periods.day.netUsd, 0.2096);
+  assert.equal(plain.periods.week.netUsd, 1.4672);
+  assert.equal(plain.periods.year.netUsd, 76.504);
+  assert.equal(plain.periods.day.netGomining, 0.52);
+  // 20% off maintenance: (0.288 + 0.1424) * 0.2 = 0.08608 more per day
+  const disc = rewardsBreakdown(market, { powerTh: 16, efficiencyWth: 15, discountPct: 20, priceUsd: 249.99 });
+  assert.equal(disc.periods.day.discountUsd, 0.0861);
+  assert.equal(disc.periods.day.netUsd, 0.2957);
+  assert.equal(disc.payback.days, 846);
+  assert.equal(rewardsBreakdown(market, { powerTh: 1, efficiencyWth: 15, discountPct: 500 }).input.discountPct, 100);
+
+  assert.equal(listedPricePerTh(normalizePresets(presets), 12), 18.99);
+  assert.equal(listedPricePerTh(normalizePresets(presets), 15), 15.6244);
+  assert.equal(listedPricePerTh(normalizePresets(presets), 13), null);
+
+  const plan = investmentPlan(market, { startTh: 10, efficiencyWth: 15, monthlyUsd: 100, months: 12, pricePerThUsd: 20 });
+  assert.equal(plan.rows.length, 12);
+  assert.equal(plan.summary.finalTh, 70);        // 10 + 12 × 5
+  assert.equal(plan.summary.investedUsd, 1400);  // 200 + 12 × 100
+  assert.equal(plan.summary.reinvestedUsd, 0);
+  const compounding = investmentPlan(market, { startTh: 10, efficiencyWth: 15, monthlyUsd: 100, months: 12, pricePerThUsd: 20, reinvest: true });
+  assert.ok(compounding.summary.finalTh > 70);
+  assert.ok(compounding.summary.reinvestedUsd > 0);
+  const payoff = investmentPlan(market, { startTh: 10, efficiencyWth: 12, monthlyUsd: 0, months: 120, pricePerThUsd: 5 });
+  assert.ok(payoff.summary.breakEvenMonth > 0);
+});

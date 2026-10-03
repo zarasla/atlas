@@ -2,7 +2,7 @@
 
 A GoMining dashboard and an MCP server for Claude, built on one shared data layer, so the numbers on screen and the numbers Claude quotes always match.
 
-- **Dashboard** in The Goose's brand: net reward per TH, BTC and GOMINING prices (24h change), hashprice, payout vs the 365-day average, network hashrate and difficulty, the next difficulty adjustment, where each TH's payout goes, net reward by efficiency with break-even, an earnings calculator, payback and annual return for every miner GoMining sells, an upgrade advisor, miner prices, and history charts (sats/TH, hashprice, BTC, hashrate, GOMINING). Works on a phone.
+- **Dashboard** in The Goose's brand, led by the **Goose Calculator** (rewards per day/week/month/year with your maintenance discount, in USD, BTC, sats and GOMINING; and an investment plan that simulates monthly buys and reinvesting), then: net reward per TH, BTC and GOMINING prices (24h change), hashprice, payout vs the 365-day average, network hashrate and difficulty, the next difficulty adjustment, where each TH's payout goes, net reward by efficiency with break-even, payback and annual return for every miner GoMining sells, an upgrade advisor, miner prices, and history charts (sats/TH, hashprice, BTC, hashrate, GOMINING). Works on a phone.
 - **MCP server**: the same data as tools Claude can call, plus a passthrough for your own GoMining account endpoints.
 
 ![The Goose's mining dashboard](docs/dashboard.png)

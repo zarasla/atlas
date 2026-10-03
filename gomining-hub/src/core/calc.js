@@ -192,3 +192,87 @@ export function marketSummary(data) {
     upgradeAdvisor: upgradeAdvisor(income, data.upgrades),
   };
 }
+
+export const DAYS_PER_MONTH = 30.4375;
+const PERIODS = [['day', 1], ['week', 7], ['month', DAYS_PER_MONTH], ['year', 365]];
+
+// Rewards for a miner over a day, week, month and year. `discountPct` is the owner's maintenance
+// discount (VIP level, paying fees in GOMINING), applied to electricity and service together.
+// `gominingUsd` (optional) adds the net in GOMINING tokens.
+export function rewardsBreakdown(market, { powerTh, efficiencyWth, discountPct = 0, priceUsd, gominingUsd, useAverageReward = false }) {
+  if (!(powerTh > 0)) throw new Error('powerTh must be greater than 0');
+  if (!(efficiencyWth > 0)) throw new Error('efficiencyWth must be greater than 0');
+  const discount = Math.min(Math.max(Number(discountPct) || 0, 0), 100) / 100;
+  const rewardPerTh = useAverageReward && market.averageRewardUsdPerThDay365 !== null ? market.averageRewardUsdPerThDay365 : market.rewardUsdPerThDay;
+  const grossUsd = rewardPerTh * powerTh;
+  const electricityUsd = market.electricityUsdPerThPerWthDay * efficiencyWth * powerTh;
+  const serviceUsd = market.serviceUsdPerThDay * powerTh;
+  const discountUsd = (electricityUsd + serviceUsd) * discount;
+  const netUsd = grossUsd - electricityUsd - serviceUsd + discountUsd;
+  const periods = {};
+  for (const [name, days] of PERIODS) {
+    periods[name] = {
+      grossUsd: round(grossUsd * days, 4),
+      electricityUsd: round(electricityUsd * days, 4),
+      serviceUsd: round(serviceUsd * days, 4),
+      discountUsd: round(discountUsd * days, 4),
+      netUsd: round(netUsd * days, 4),
+      netBtc: round((netUsd * days) / market.btcPriceUsd, 8),
+      netSats: Math.round(toSats(netUsd * days, market.btcPriceUsd)),
+      netGomining: gominingUsd > 0 ? round((netUsd * days) / gominingUsd, 2) : null,
+    };
+  }
+  const payback = priceUsd > 0 ? {
+    priceUsd,
+    days: netUsd > 0 ? Math.ceil(priceUsd / netUsd) : null,
+    annualReturnPct: round(((netUsd * 365) / priceUsd) * 100, 2),
+  } : null;
+  return { input: { powerTh, efficiencyWth, discountPct: discount * 100, rewardBasis: rewardPerTh === market.rewardUsdPerThDay ? 'today' : '365-day average' }, periods, payback };
+}
+
+// Listed price per TH for an efficiency: the 1 TH miner if GoMining sells one, else the cheapest per TH.
+export function listedPricePerTh(presets, efficiencyWth) {
+  const rows = presets.filter((row) => row.efficiencyWth === efficiencyWth);
+  if (!rows.length) return null;
+  return rows.find((row) => row.powerTh === 1)?.priceUsdPerTh ?? Math.min(...rows.map((row) => row.priceUsdPerTh));
+}
+
+// Month-by-month simulation of buying hashrate at a fixed price per TH, at today's rates.
+// With `reinvest`, each month's net reward also buys TH. Returns monthly rows and a summary.
+export function investmentPlan(market, { startTh = 0, efficiencyWth, monthlyUsd = 0, months = 12, pricePerThUsd, reinvest = false, discountPct = 0 }) {
+  if (!(efficiencyWth > 0)) throw new Error('efficiencyWth must be greater than 0');
+  if (!(pricePerThUsd > 0)) throw new Error('pricePerThUsd must be greater than 0');
+  const span = Math.min(Math.max(Math.round(months), 1), 120);
+  const perThMonth = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct }).periods.month.netUsd;
+  let th = Math.max(Number(startTh) || 0, 0);
+  let invested = th * pricePerThUsd;
+  let earnedUsd = 0;
+  let reinvestedUsd = 0;
+  let breakEvenMonth = null;
+  const rows = [];
+  for (let month = 1; month <= span; month++) {
+    th += monthlyUsd / pricePerThUsd;
+    invested += monthlyUsd;
+    const netUsd = th * perThMonth;
+    earnedUsd += netUsd;
+    if (reinvest && netUsd > 0) {
+      th += netUsd / pricePerThUsd;
+      reinvestedUsd += netUsd;
+    }
+    if (breakEvenMonth === null && invested > 0 && earnedUsd >= invested) breakEvenMonth = month;
+    rows.push({ month, th: round(th, 3), investedUsd: round(invested, 2), netUsdMonth: round(netUsd, 2), earnedUsd: round(earnedUsd, 2) });
+  }
+  const last = rows.at(-1);
+  return {
+    rows,
+    summary: {
+      finalTh: last.th,
+      investedUsd: last.investedUsd,
+      earnedUsd: last.earnedUsd,
+      earnedBtc: round(earnedUsd / market.btcPriceUsd, 8),
+      reinvestedUsd: round(reinvestedUsd, 2),
+      monthlyIncomeUsdAtEnd: round(last.th * perThMonth, 2),
+      breakEvenMonth,
+    },
+  };
+}
