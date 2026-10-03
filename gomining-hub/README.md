@@ -14,6 +14,7 @@ gomining-hub/
   src/mcp/       MCP server for Claude
   public/        dashboard page, styles and SVG charts
   data/          offline snapshot; history.json is written here at runtime
+  deploy/        VPS install: systemd service, Caddy/nginx site, preflight check
   test/          node:test suite against a fake GoMining API
 ```
 
@@ -122,6 +123,40 @@ The account endpoints aren't documented, so find them in the same Network tab an
 | `GOMINING_BASE_URL` | `https://api.gomining.com/api` | API base URL |
 | `GOMINING_ALLOW_WRITES` | unset | `1` allows PUT, PATCH and DELETE through `gomining_api_request` |
 | `PORT` / `HOST` | `4173` / `127.0.0.1` | Where the dashboard listens |
+| `GOMINING_HISTORY_PATH` | `data/history.json` | Where recorded payout days are saved |
+
+## Deploy to gooses.online
+
+The `deploy/` folder puts the dashboard on your VPS behind HTTPS. It contains no credentials and doesn't need any from this repo; you run it on the VPS yourself.
+
+1. **Point DNS at the VPS.** At your domain registrar, add an `A` record for the name you want (e.g. `hub` → `hub.gooses.online`, or `@` for `gooses.online` itself) with the VPS's IP address.
+2. **Copy the project to the VPS**, from your PC with the same SSH access you already use, e.g. `git clone` on the VPS, or `scp -r gomining-hub user@your-vps:~/`.
+3. **Check the server first** (read-only, changes nothing):
+   ```bash
+   bash deploy/check.sh hub.gooses.online
+   ```
+   Shows the OS, Node version, which web server is running, what uses ports 80/443, the running bots, and whether DNS already points here.
+4. **Install:**
+   ```bash
+   sudo bash deploy/install.sh hub.gooses.online
+   ```
+   Creates a locked `gominghub` system user, copies the app to `/opt/gomining-hub`, starts the `gomining-hub` service on `127.0.0.1:4173`, and adds one site to Caddy or nginx (whichever is running) with HTTPS. If the web server's config test fails, it restores the previous config and reloads nothing. It doesn't stop, change or restart other services such as the Goose Discord bot.
+5. **Update later:** pull the new code and run the same install command again. Payout history in `/var/lib/gomining-hub/` is kept.
+
+Useful commands: `systemctl status gomining-hub`, `journalctl -u gomining-hub -f`.
+
+### Security on the VPS
+
+- The dashboard serves public GoMining data only. It never loads `GOMINING_TOKEN`, even if one is set, and has no route that can reach your account.
+- It listens on `127.0.0.1` only; Caddy or nginx is the only thing exposed.
+- The service runs as an unprivileged user with a read-only filesystem except its history folder.
+- Responses carry a strict Content-Security-Policy and refuse framing.
+- A forced refresh is limited to once a minute, so the public refresh button can't be used to hammer GoMining.
+- Keep the MCP server (and your token) on your own computer, not the VPS.
+
+### Keeping secrets out of the repo
+
+`npm test` includes a scan of every file in the repository for private keys, tokens (GoMining, GitHub, Discord, Telegram, Anthropic, AWS), hard-coded passwords and public IP addresses, and fails if it finds one. `.gitignore` also excludes `.env` files, keys and certificates. Server addresses and credentials stay on your PC and on the VPS.
 
 ## Design notes
 

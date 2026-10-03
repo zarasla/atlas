@@ -19,7 +19,14 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'pu
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
 const send = (res, status, body, type = 'application/json; charset=utf-8') => {
-  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+  res.writeHead(status, {
+    'content-type': type,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+    'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
@@ -79,7 +86,7 @@ export function createApp({ market }) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
   const port = Number(process.env.PORT) || 4173;
   const host = process.env.HOST || '127.0.0.1';
-  createHttpServer(createApp(fromEnv())).listen(port, host, () => {
+  createHttpServer(createApp(fromEnv(process.env, { withToken: false }))).listen(port, host, () => {
     console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
   });
 }

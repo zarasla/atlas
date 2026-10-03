@@ -95,3 +95,15 @@ test('market service falls back to the sample snapshot per part and says so', as
   assert.deepEqual(await svc.history(), [], 'sample payouts are never recorded as history');
   await assert.rejects(readFile(historyPath));
 });
+
+test('a forced refresh is throttled so the public refresh button cannot hammer GoMining', async () => {
+  let clock = Date.parse('2026-09-09T12:00:00Z');
+  const { api, market: svc } = await service(undefined, () => clock);
+  await svc.get();
+  clock += 10_000;
+  await svc.get({ fresh: true });
+  assert.equal(api.calls.length, 3, 'refresh within a minute is served from cache');
+  clock += 60_000;
+  await svc.get({ fresh: true });
+  assert.equal(api.calls.length, 6, 'refresh after a minute fetches again');
+});

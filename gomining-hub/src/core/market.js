@@ -15,14 +15,18 @@ const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'data
 export const DEFAULT_SNAPSHOT_PATH = join(DATA_DIR, 'sample-snapshot.json');
 export const DEFAULT_HISTORY_PATH = join(DATA_DIR, 'history.json');
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+// A forced refresh still waits this long after the last fetch, so a public dashboard's refresh
+// button can't be used to hammer GoMining.
+const MIN_REFRESH_MS = 60 * 1000;
 const HISTORY_LIMIT = 730;
 
 export class MarketService {
-  constructor({ client, snapshotPath = DEFAULT_SNAPSHOT_PATH, historyPath = DEFAULT_HISTORY_PATH, ttlMs = DEFAULT_TTL_MS, now = Date.now } = {}) {
+  constructor({ client, snapshotPath = DEFAULT_SNAPSHOT_PATH, historyPath = DEFAULT_HISTORY_PATH, ttlMs = DEFAULT_TTL_MS, minRefreshMs = MIN_REFRESH_MS, now = Date.now } = {}) {
     this.client = client;
     this.snapshotPath = snapshotPath;
     this.historyPath = historyPath;
     this.ttlMs = ttlMs;
+    this.minRefreshMs = minRefreshMs;
     this.now = now;
     this.cache = null;
     this.inflight = null;
@@ -36,7 +40,8 @@ export class MarketService {
   // Returns { source, fetchedAt, errors, income, presets, upgrades }. `source` is `live` only
   // when all three parts came from GoMining just now.
   async get({ fresh = false } = {}) {
-    if (!fresh && this.cache && this.now() - this.cache.at < this.ttlMs) return this.cache.value;
+    const age = this.cache ? this.now() - this.cache.at : Infinity;
+    if (age < (fresh ? this.minRefreshMs : this.ttlMs)) return this.cache.value;
     this.inflight ??= this.load().finally(() => { this.inflight = null; });
     const value = await this.inflight;
     this.cache = { at: this.now(), value };
