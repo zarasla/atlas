@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GoMining Hub</title>
+  <meta name="description" content="GoMining daily payout, miner prices, earnings and payback.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2314130f'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h14M12 8v16M20 8v16' stroke='%23f2a900' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="/" aria-label="GoMining Hub home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M9 11h14M9 16h14M9 21h14M12 8v16M20 8v16"/></svg>
+        <span>GoMining <b>Hub</b></span>
+      </a>
+      <div class="top-actions">
+        <span class="source" id="source" data-state="loading"><span class="source-dot"></span><span id="source-text">Loading…</span></span>
+        <button class="icon-btn" id="refresh" type="button" aria-label="Refresh data" title="Refresh data">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+        </button>
+        <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap" id="main" aria-busy="true">
+    <div class="notice" id="notice" hidden></div>
+
+    <div class="filters" role="group" aria-label="Filters">
+      <label class="field inline">
+        <span>Miner efficiency</span>
+        <select id="efficiency"></select>
+      </label>
+      <p class="filters-note">Scopes the headline, the payout split and the efficiency chart.</p>
+    </div>
+
+    <section class="hero-row">
+      <article class="card hero">
+        <p class="eyebrow">Net reward per TH today</p>
+        <p class="hero-value"><span id="hero-sats">—</span><span class="hero-unit">sats</span></p>
+        <p class="hero-sub" id="hero-sub">&nbsp;</p>
+        <p class="hero-status" id="hero-status" hidden></p>
+      </article>
+      <div class="tiles">
+        <article class="card tile"><p class="tile-label">BTC price used</p><p class="tile-value" id="t-btc">—</p><p class="tile-meta" id="t-date">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Gross payout per TH</p><p class="tile-value" id="t-gross">—</p><p class="tile-meta" id="t-gross-sats">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Electricity</p><p class="tile-value" id="t-kwh">—</p><p class="tile-meta" id="t-elec">&nbsp;</p></article>
+        <article class="card tile"><p class="tile-label">Service fee per TH</p><p class="tile-value" id="t-service">—</p><p class="tile-meta">per day</p></article>
+      </div>
+    </section>
+
+    <section class="card">
+      <header class="card-head">
+        <div>
+          <h2>Where each TH's payout goes</h2>
+          <p class="card-sub" id="split-sub">Today, per TH per day</p>
+        </div>
+      </header>
+      <div class="chart" id="split-chart"></div>
+      <table class="legend-table" id="split-table" aria-label="Payout split per TH">
+        <thead><tr><th scope="col">Part</th><th scope="col" class="num">USD per day</th><th scope="col" class="num">Share of payout</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="grid-2">
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Net reward by efficiency</h2>
+            <p class="card-sub" id="curve-sub">Sats per TH per day at today's payout and fees</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="curve">Table</button>
+        </header>
+        <div class="chart" id="curve-chart"></div>
+        <div class="table-wrap" id="curve-table" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <div>
+            <h2>Payout history</h2>
+            <p class="card-sub">Sats per TH per day, recorded each day this dashboard fetches live data</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="history">Table</button>
+        </header>
+        <div class="chart" id="history-chart"></div>
+        <div class="table-wrap" id="history-table" hidden></div>
+      </article>
+    </section>
+
+    <section class="card calc">
+      <header class="card-head">
+        <div>
+          <h2>Earnings calculator</h2>
+          <p class="card-sub">Today's rates held constant</p>
+        </div>
+      </header>
+      <div class="calc-body">
+        <form id="calc" class="calc-form" autocomplete="off">
+          <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0.01" step="any" value="16" required inputmode="decimal"></label>
+          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" required inputmode="decimal"></label>
+          <label class="field"><span>Days</span><input name="days" type="number" min="1" max="3650" step="1" value="30" required inputmode="numeric"></label>
+          <label class="field"><span>Price (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
+          <label class="check"><input name="average" type="checkbox"> Use 365-day average payout</label>
+        </form>
+        <div class="calc-out" id="calc-out" aria-live="polite">
+          <div class="calc-main"><p class="eyebrow">Net per day</p><p class="calc-big" id="c-day">—</p><p class="calc-sub" id="c-day-sats">&nbsp;</p></div>
+          <dl class="calc-list">
+            <div><dt id="c-period-label">Net over 30 days</dt><dd id="c-period">—</dd></div>
+            <div><dt>Fees over period</dt><dd id="c-fees">—</dd></div>
+            <div><dt>Payback</dt><dd id="c-payback">—</dd></div>
+            <div><dt>Annual return</dt><dd id="c-apr">—</dd></div>
+          </dl>
+          <p class="fine" id="c-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <header class="card-head">
+        <div>
+          <h2>Miner prices</h2>
+          <p class="card-sub">Price per TH by miner size, as GoMining lists them</p>
+        </div>
+        <button class="link-btn" type="button" data-table-toggle="prices">Table</button>
+      </header>
+      <div class="legend" id="prices-legend"></div>
+      <div class="chart" id="prices-chart"></div>
+      <div class="table-wrap" id="prices-table" hidden></div>
+    </section>
+
+    <section class="card">
+      <header class="card-head">
+        <div>
+          <h2>Upgrade costs</h2>
+          <p class="card-sub">USD per TH to reach each efficiency level</p>
+        </div>
+      </header>
+      <div class="table-wrap scroll" id="upgrade-table"></div>
+    </section>
+
+    <footer class="foot">
+      <p>Data: GoMining's public API (<code>nft-income-aggregation/get-last</code>, <code>nft-collection/find-all-generative</code>, <code>nft/get-upgrade-rate</code>). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

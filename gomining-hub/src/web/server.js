@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+// Serves the dashboard (public/) and a small JSON API over the shared market service.
+//
+//   GET /api/market     payout, miner prices, upgrade tables, efficiency curve, and data source
+//   GET /api/history    payouts recorded on days this server fetched live data
+//   GET /api/earnings   ?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]
+//
+// The GoMining account passthrough is deliberately not exposed here: the dashboard only ever
+// needs public data, and an HTTP route would let anything on the network use your token.
+
+import { createServer as createHttpServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { dirname, extname, join, normalize, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { calculateEarnings, efficiencyCurve, findListedPrice } from '../core/calc.js';
+import { fromEnv } from '../core/config.js';
+
+const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
+const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+
+const send = (res, status, body, type = 'application/json; charset=utf-8') => {
+  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+  res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+};
+
+const positive = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+};
+
+export function createApp({ market }) {
+  const routes = {
+    '/api/market': async (url) => {
+      const data = await market.get({ fresh: url.searchParams.get('refresh') === '1' });
+      return { ...data, curve: efficiencyCurve(data.income) };
+    },
+    '/api/history': async () => ({ rows: await market.history() }),
+    '/api/earnings': async (url) => {
+      const query = url.searchParams;
+      const powerTh = positive(query.get('powerTh'));
+      const efficiencyWth = positive(query.get('efficiencyWth'));
+      if (!powerTh || !efficiencyWth) return [400, { error: 'powerTh and efficiencyWth must be positive numbers' }];
+      const days = Math.min(Math.round(positive(query.get('days')) ?? 30), 3650);
+      const data = await market.get();
+      const given = positive(query.get('priceUsd'));
+      const listed = given ? null : findListedPrice(data.presets, powerTh, efficiencyWth);
+      return {
+        ...calculateEarnings(data.income, { powerTh, efficiencyWth, days, priceUsd: given ?? listed ?? undefined, useAverageReward: query.get('average') === '1' }),
+        priceSource: given ? 'provided' : listed ? 'GoMining listed price' : null,
+        dataSource: data.sources.income,
+      };
+    },
+  };
+
+  return async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    try {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
+      const route = routes[url.pathname];
+      if (route) {
+        const result = await route(url);
+        return Array.isArray(result) ? send(res, result[0], result[1]) : send(res, 200, result);
+      }
+      if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
+
+      // Static files, confined to public/.
+      const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
+      const file = normalize(join(PUBLIC_DIR, relative));
+      if (!file.startsWith(PUBLIC_DIR + sep)) return send(res, 403, 'Forbidden', 'text/plain');
+      const body = await readFile(file).catch(() => null);
+      if (!body) return send(res, 404, 'Not found', 'text/plain');
+      return send(res, 200, body, TYPES[extname(file)] ?? 'application/octet-stream');
+    } catch (error) {
+      return send(res, 500, { error: error?.message ?? String(error) });
+    }
+  };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
+  const port = Number(process.env.PORT) || 4173;
+  const host = process.env.HOST || '127.0.0.1';
+  createHttpServer(createApp(fromEnv())).listen(port, host, () => {
+    console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
+  });
+}

@@ -1,0 +1,160 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { calculateEarnings, dailyBreakdownPerTh, efficiencyCurve, findListedPrice } from '../core/calc.js';
+import { GoMiningError } from '../core/client.js';
+
+const MAX_RESPONSE_CHARS = 60_000;
+
+const json = (value) => {
+  let text = JSON.stringify(value, null, 2);
+  if (text.length > MAX_RESPONSE_CHARS) {
+    text = `${text.slice(0, MAX_RESPONSE_CHARS)}\n… truncated (${text.length} characters total). Narrow the request to see the rest.`;
+  }
+  return { content: [{ type: 'text', text }] };
+};
+
+const failure = (error) => {
+  const detail = error instanceof GoMiningError && error.body !== undefined ? `\nResponse body: ${JSON.stringify(error.body).slice(0, 2000)}` : '';
+  return { isError: true, content: [{ type: 'text', text: `${error?.message ?? String(error)}${detail}` }] };
+};
+
+const tool = (handler) => async (args) => {
+  try {
+    return json(await handler(args ?? {}));
+  } catch (error) {
+    return failure(error);
+  }
+};
+
+// Every market answer says where its numbers came from, so Claude never presents sample data as live.
+const provenance = (market, part) => ({
+  dataSource: market.sources[part],
+  ...(market.sources[part] === 'sample' ? { sampleCapturedAt: market.sampleCapturedAt, liveError: market.errors[part] } : {}),
+});
+
+export function createServer({ client, market, allowWrites = false }) {
+  const server = new McpServer({ name: 'gomining-hub', version: '0.1.0' });
+  const readOnly = { readOnlyHint: true, openWorldHint: true };
+
+  server.registerTool('gomining_daily_reward', {
+    title: 'GoMining daily reward',
+    description: 'Latest GoMining daily payout per TH (USD and sats), the BTC price used, electricity per W/TH, kWh price and service fee per TH. Optionally splits it for one efficiency.',
+    inputSchema: {
+      efficiencyWth: z.number().positive().optional().describe('Also show the per-TH split into electricity, service and net at this W/TH'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ efficiencyWth }) => {
+    const data = await market.get();
+    return {
+      ...data.income,
+      ...(efficiencyWth ? { breakdownPerTh: dailyBreakdownPerTh(data.income, efficiencyWth) } : {}),
+      ...provenance(data, 'income'),
+    };
+  }));
+
+  server.registerTool('gomining_miner_prices', {
+    title: 'GoMining miner prices',
+    description: 'Digital miners GoMining currently sells: power (TH), energy efficiency (W/TH), price in USD and price per TH. Filter by efficiency or budget.',
+    inputSchema: {
+      efficiencyWth: z.number().positive().optional().describe('Only miners at this energy efficiency, e.g. 12 or 15'),
+      maxPriceUsd: z.number().positive().optional().describe('Only miners at or below this price'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ efficiencyWth, maxPriceUsd }) => {
+    const data = await market.get();
+    const miners = data.presets.filter((row) => (efficiencyWth === undefined || row.efficiencyWth === efficiencyWth) && (maxPriceUsd === undefined || row.priceUsd <= maxPriceUsd));
+    return { count: miners.length, efficienciesListed: [...new Set(data.presets.map((row) => row.efficiencyWth))], miners, ...provenance(data, 'presets') };
+  }));
+
+  server.registerTool('gomining_upgrade_rates', {
+    title: 'GoMining upgrade rates',
+    description: 'GoMining price tables per W/TH level: what a TH is valued at for each efficiency, and what an owner pays per TH to upgrade a miner one W/TH.',
+    annotations: readOnly,
+  }, tool(async () => {
+    const data = await market.get();
+    return { ...data.upgrades, ...provenance(data, 'upgrades') };
+  }));
+
+  server.registerTool('gomining_efficiency_curve', {
+    title: 'Net reward by efficiency',
+    description: 'Net reward per TH per day at each energy efficiency from 12 to 20 W/TH at today\'s payout and fees, plus the break-even W/TH above which a miner earns nothing.',
+    annotations: readOnly,
+  }, tool(async () => {
+    const data = await market.get();
+    return { ...efficiencyCurve(data.income), ...provenance(data, 'income') };
+  }));
+
+  server.registerTool('gomining_calculate_earnings', {
+    title: 'Calculate GoMining miner earnings',
+    description: 'Estimate daily and period earnings for a GoMining miner of a given power and efficiency at the latest payout and fees: gross, electricity, service, net in USD, sats and BTC, plus payback days and annual return when a price is known. Without priceUsd, the listed GoMining price for that exact miner is used when one exists.',
+    inputSchema: {
+      powerTh: z.number().positive().describe('Miner power in TH, e.g. 16'),
+      efficiencyWth: z.number().positive().describe('Energy efficiency in W/TH, e.g. 15 (lower is better)'),
+      days: z.number().int().positive().max(3650).optional().describe('Period length in days for totals (default 30)'),
+      priceUsd: z.number().positive().optional().describe('What the miner cost or would cost, for the payback estimate'),
+      useAverageReward: z.boolean().optional().describe('Use the 365-day average payout per TH instead of today\'s'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ powerTh, efficiencyWth, days, priceUsd, useAverageReward }) => {
+    const data = await market.get();
+    const listed = priceUsd ? null : findListedPrice(data.presets, powerTh, efficiencyWth);
+    const price = priceUsd ?? listed ?? undefined;
+    return {
+      ...calculateEarnings(data.income, { powerTh, efficiencyWth, days, priceUsd: price, useAverageReward }),
+      priceSource: priceUsd ? 'provided' : listed ? 'GoMining listed price' : null,
+      ...provenance(data, 'income'),
+    };
+  }));
+
+  server.registerTool('gomining_payout_history', {
+    title: 'GoMining payout history',
+    description: 'Daily payout per TH, BTC price and fees recorded by this server each day it fetched live data (GoMining\'s API has no history endpoint, so the series starts the first day the server ran).',
+    inputSchema: {
+      days: z.number().int().positive().max(730).optional().describe('Only the most recent N days'),
+    },
+    annotations: { readOnlyHint: true },
+  }, tool(async ({ days }) => {
+    const rows = await market.history();
+    const slice = days ? rows.slice(-days) : rows;
+    return { count: slice.length, firstDate: slice[0]?.date ?? null, lastDate: slice.at(-1)?.date ?? null, rows: slice };
+  }));
+
+  server.registerTool('gomining_api_request', {
+    title: 'Call the GoMining API',
+    description: [
+      'Call any GoMining API endpoint under https://api.gomining.com/api and return the JSON response.',
+      'Use it for account data (your miners, rewards, wallet, clan, league) that the other tools do not cover.',
+      'Sends the GOMINING_TOKEN bearer token when one is configured. GoMining reads data with POST as often as GET, so check the endpoint before calling it.',
+      allowWrites ? '' : 'PUT, PATCH and DELETE are blocked unless GOMINING_ALLOW_WRITES=1.',
+    ].filter(Boolean).join(' '),
+    inputSchema: {
+      method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('POST').describe('HTTP method'),
+      path: z.string().describe('API path after /api, starting with "/", e.g. /nft/get-upgrade-rate'),
+      body: z.record(z.string(), z.unknown()).optional().describe('JSON body for POST/PUT/PATCH (default {})'),
+      query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe('Query string parameters'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: allowWrites, openWorldHint: true },
+  }, tool(async ({ method = 'POST', path, body, query }) => {
+    if (!allowWrites && ['PUT', 'PATCH', 'DELETE'].includes(method)) {
+      throw new GoMiningError(`${method} is blocked. Set GOMINING_ALLOW_WRITES=1 to allow changes to your GoMining account.`);
+    }
+    return client.request(method, path, { body, query });
+  }));
+
+  server.registerTool('gomining_status', {
+    title: 'GoMining Hub status',
+    description: 'Shows how this server is configured and whether GoMining is reachable: base URL, token set, writes allowed, and whether market data is live or sample.',
+    annotations: { readOnlyHint: true },
+  }, tool(async () => {
+    const data = await market.get();
+    return {
+      baseUrl: client.baseUrl,
+      tokenConfigured: client.hasToken,
+      writesAllowed: allowWrites,
+      marketData: data.source,
+      ...(data.source === 'sample' ? { liveErrors: data.errors, sampleCapturedAt: data.sampleCapturedAt } : {}),
+    };
+  }));
+
+  return server;
+}
