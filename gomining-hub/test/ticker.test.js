@@ -10,9 +10,16 @@ test('ticker pins BTC and GOMINING and lists the other top coins', async () => {
   const data = await ticker.get();
   assert.deepEqual(data.btc, { priceUsd: 80500, change24hPct: 1.25 });
   assert.deepEqual(data.gomining, { priceUsd: 0.42, change24hPct: -2.5 });
-  assert.deepEqual(data.coins.map((c) => c.symbol), ['ETH', 'SOL'], 'BTC is pinned, rows without a price are dropped');
+  assert.deepEqual(data.coins.map((c) => c.symbol), ['ETH', 'SOL'], 'BTC is pinned, stablecoins and rows without a price are dropped');
   await ticker.get();
-  assert.equal(api.calls.length, 2, 'cached for a minute: one markets call and one price call');
+  assert.equal(api.calls.length, 3, 'cached for a minute: one markets call, one stablecoin list and one price call');
+});
+
+test('without CoinGecko\'s stablecoin list, the big stablecoins are still left out', async () => {
+  const base = fakeFetch();
+  const fetchImpl = async (url, init) => (new URL(url).searchParams.get('category') ? new Response('{}', { status: 429 }) : base.fetchImpl(url, init));
+  const coins = await new ExternalService({ fetchImpl }).topCoins(50);
+  assert.deepEqual(coins.map((c) => c.symbol), ['BTC', 'ETH', 'SOL']);
 });
 
 test('ticker keeps the last good list when CoinGecko fails', async () => {

@@ -112,9 +112,12 @@ export function fakeFetch(routes = {}) {
       case 'POST /api/nft-game/nft-game-ability/find-all': return reply(200, { data: { array: spells } });
       case 'GET /api/v3/coins/bitcoin/market_chart': return reply(200, { prices: days(80000, 10) });
       case 'GET /api/v3/coins/gmt-token/market_chart': return reply(200, { prices: days(0.4, 10) });
-      case 'GET /api/v3/coins/markets': return reply(200, [
-        { market_cap_rank: 1, symbol: 'btc', name: 'Bitcoin', current_price: 80500, price_change_percentage_24h: 1.25 },
-        { market_cap_rank: 2, symbol: 'eth', name: 'Ethereum', current_price: 3100.5, price_change_percentage_24h: -0.8 },
+      case 'GET /api/v3/coins/markets': return target.searchParams.get('category') === 'stablecoins' ? reply(200, [
+        { id: 'tether', symbol: 'usdt', name: 'Tether', current_price: 1 },
+      ]) : reply(200, [
+        { id: 'bitcoin', market_cap_rank: 1, symbol: 'btc', name: 'Bitcoin', current_price: 80500, price_change_percentage_24h: 1.25 },
+        { id: 'tether', market_cap_rank: 2, symbol: 'usdt', name: 'Tether', current_price: 0.9999, price_change_percentage_24h: 0 },
+        { id: 'ethereum', market_cap_rank: 2, symbol: 'eth', name: 'Ethereum', current_price: 3100.5, price_change_percentage_24h: -0.8 },
         { market_cap_rank: 3, symbol: 'sol', name: 'Solana', current_price: 160.2, price_change_percentage_24h: 4.1 },
         { market_cap_rank: 4, symbol: 'bad', name: 'No price' },
       ]);

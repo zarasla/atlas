@@ -19,7 +19,8 @@ const round = (value, digits) => (isNumber(value) ? Number(value.toFixed(digits)
 
 // How long each answer is reused, so the ticker, the dashboard and the MCP tools together make at
 // most one call per source per period (CoinGecko's free API answers HTTP 429 when asked too often).
-const TTL_MS = { network: 60_000, prices: 90_000, topCoins: 90_000, sentiment: 30 * 60_000, priceHistory: 6 * 60 * 60_000 };
+const TTL_MS = { network: 60_000, prices: 90_000, topCoins: 90_000, sentiment: 30 * 60_000, priceHistory: 6 * 60 * 60_000, stablecoins: 24 * 60 * 60_000 };
+const FALLBACK_STABLECOINS = new Set(['usdt', 'usdc', 'usds', 'usde', 'dai', 'usd1', 'usdg', 'pyusd', 'rlusd', 'fdusd', 'tusd', 'usdd', 'gho', 'frax', 'busd', 'eurc']);
 // After a failure, wait this long before asking again, and keep serving the last good answer
 // (marked stale) for up to MAX_STALE_MS.
 const RETRY_AFTER_MS = 60_000;
@@ -151,12 +152,29 @@ export class ExternalService {
     return { btc, gomining: token };
   }
 
-  // Top coins by market cap for the ticker bar: symbol, name, price and 24h change.
+  // CoinGecko's own stablecoin category (USDT, USDC, DAI, USDe and the rest), so new ones drop out of
+  // the ticker by themselves. If it can't be read, a short list of the big ones is used instead.
+  stablecoinIds() {
+    return this.cached('stablecoins', TTL_MS.stablecoins, async () => {
+      const rows = await this.json(`${COINGECKO}/coins/markets?vs_currency=usd&category=stablecoins&order=market_cap_desc&per_page=250&page=1`);
+      if (!Array.isArray(rows) || !rows.length) throw new Error('CoinGecko stablecoin list is malformed');
+      return rows.map((row) => row?.id).filter((id) => typeof id === 'string');
+    });
+  }
+
+  // Top coins by market cap for the ticker bar, stablecoins left out: symbol, name, price, 24h change.
   async loadTopCoins(limit) {
-    const rows = await this.json(`${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${limit}&page=1&price_change_percentage=24h`);
+    const [rows, stable] = await Promise.all([
+      // Ask for more than needed so the bar stays full once stablecoins are taken out.
+      this.json(`${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${Math.min(limit * 2, 250)}&page=1&price_change_percentage=24h`),
+      this.stablecoinIds().catch(() => null),
+    ]);
     if (!Array.isArray(rows)) throw new Error('CoinGecko markets data is malformed');
+    const stableIds = new Set(stable ?? []);
+    const isStable = (row) => (stable ? stableIds.has(row.id) : FALLBACK_STABLECOINS.has(String(row.symbol).toLowerCase()));
     return rows
-      .filter((row) => typeof row?.symbol === 'string' && isNumber(row?.current_price))
+      .filter((row) => typeof row?.symbol === 'string' && isNumber(row?.current_price) && !isStable(row))
+      .slice(0, limit)
       .map((row) => ({
         rank: isNumber(row.market_cap_rank) ? row.market_cap_rank : null,
         symbol: row.symbol.toUpperCase().slice(0, 12),
