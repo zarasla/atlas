@@ -30,9 +30,11 @@ test('lists every tool', async () => {
   const { mcp } = await connect();
   const { tools } = await mcp.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), [
-    'gomining_api_request', 'gomining_calculate_earnings', 'gomining_clan_miner_wars', 'gomining_daily_reward', 'gomining_efficiency_curve', 'gomining_maintenance_discount',
-    'gomining_miner_prices', 'gomining_miner_roi', 'gomining_network_stats', 'gomining_outlook', 'gomining_payout_history', 'gomining_status', 'gomining_upgrade_advisor', 'gomining_upgrade_rates', 'gomining_vip',
-  ]);
+    'gomining_api_request', 'gomining_calculate_earnings', 'gomining_clan_finder', 'gomining_daily_reward', 'gomining_efficiency_curve', 'gomining_maintenance_discount',
+    'gomining_miner_prices', 'gomining_miner_roi', 'gomining_miner_wars_board', 'gomining_miner_wars_leagues', 'gomining_network_stats', 'gomining_outlook',
+    'gomining_payout_history', 'gomining_planner', 'gomining_platform_stats', 'gomining_spells', 'gomining_status', 'gomining_tokenomics', 'gomining_upgrade_advisor',
+    'gomining_upgrade_rates', 'gomining_vip',
+  ].map(String));
 });
 
 test('market tools report their data source and never send the token', async () => {

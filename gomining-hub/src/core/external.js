@@ -10,15 +10,16 @@ const TIMEOUT_MS = 10_000;
 const MEMPOOL = 'https://mempool.space/api';
 const COINGECKO = 'https://api.coingecko.com/api/v3';
 const FEAR_GREED = 'https://api.alternative.me/fng/?limit=8';
-// GoMining's token has been listed under both ids; whichever CoinGecko answers for is used.
-const TOKEN_IDS = ['gomining-token', 'gmt-token'];
+// GoMining's token has been listed under both ids; whichever CoinGecko answers for is used
+// (in October 2026 it is gmt-token).
+const TOKEN_IDS = ['gmt-token', 'gomining-token'];
 
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 const round = (value, digits) => (isNumber(value) ? Number(value.toFixed(digits)) : null);
 
 // How long each answer is reused, so the ticker, the dashboard and the MCP tools together make at
 // most one call per source per period (CoinGecko's free API answers HTTP 429 when asked too often).
-const TTL_MS = { network: 60_000, prices: 90_000, topCoins: 90_000, sentiment: 30 * 60_000 };
+const TTL_MS = { network: 60_000, prices: 90_000, topCoins: 90_000, sentiment: 30 * 60_000, priceHistory: 6 * 60 * 60_000 };
 // After a failure, wait this long before asking again, and keep serving the last good answer
 // (marked stale) for up to MAX_STALE_MS.
 const RETRY_AFTER_MS = 60_000;
@@ -81,6 +82,29 @@ export class ExternalService {
 
   sentiment() {
     return this.cached('sentiment', TTL_MS.sentiment, () => this.loadSentiment());
+  }
+
+  priceHistory() {
+    return this.cached('priceHistory', TTL_MS.priceHistory, () => this.loadPriceHistory());
+  }
+
+  // Daily USD closes for the last 365 days of BTC and GOMINING (CoinGecko), for the heatmap calendar.
+  async loadPriceHistory() {
+    const series = async (id) => {
+      const data = await this.json(`${COINGECKO}/coins/${id}/market_chart?vs_currency=usd&days=365&interval=daily`);
+      const rows = Array.isArray(data?.prices) ? data.prices : [];
+      const byDay = new Map();
+      for (const [ms, price] of rows) if (isNumber(ms) && isNumber(price)) byDay.set(new Date(ms).toISOString().slice(0, 10), price);
+      if (byDay.size < 2) throw new Error(`CoinGecko returned no price history for ${id}`);
+      return [...byDay].map(([date, usd]) => ({ date, usd }));
+    };
+    const btc = await series('bitcoin');
+    let gomining = null;
+    for (const id of TOKEN_IDS) {
+      gomining = await series(id).catch(() => null);
+      if (gomining) break;
+    }
+    return { btc, gomining };
   }
 
   async loadNetwork() {

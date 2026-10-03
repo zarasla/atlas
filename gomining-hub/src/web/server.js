@@ -4,7 +4,13 @@
 //   GET /api/market     payout, prices, network, miner ROI, upgrade advisor, efficiency curve, sources
 //   GET /api/history    payouts recorded on days this server fetched live data
 //   GET /api/ticker     BTC and GOMINING prices plus the top 50 coins by market cap (ticker bar)
-//   GET /api/minerwars  HONKSQUAD's Miner Wars league, rank, blocks, prize estimate and members
+//   GET /api/minerwars/leagues        every Miner Wars league this cycle, with its multiplier odds
+//   GET /api/minerwars/board?league=3 one league's clan board, prize fund and BTC per block
+//   GET /api/minerwars/search?q=name  clans by name across every league
+//   GET /api/minerwars/spells         spells on sale and their GOMINING prices
+//   GET /api/platform   GoMining platform statistics and veGOMINING totals
+//   GET /api/tokenomics Burn & Mint history, the current epoch and veGOMINING income per vote
+//   GET /api/prices/history  365 days of daily BTC and GOMINING prices
 //   GET /api/earnings   ?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]
 //   /mcp/<MCP_ACCESS_KEY>  the MCP server over Streamable HTTP, for Claude's custom connectors
 //
@@ -99,8 +105,12 @@ const positive = (value) => {
  * @param {{ key: string, client: object, market: object, allowWrites?: boolean }} [options.mcp]
  *   enables /mcp/<key>; omitted or a short key leaves the endpoint off
  */
-export function createApp({ market, mcp, ticker, minerWars }) {
+export function createApp({ market, mcp, ticker, minerWars, platform, external }) {
   const mcpEnabled = Boolean(mcp?.key && mcp.key.length >= MIN_KEY_LENGTH);
+  const needs = (service, name) => {
+    if (!service) throw Object.assign(new Error(`${name} is not configured on this server`), { status: 503 });
+    return service;
+  };
   const routes = {
     '/api/market': async (url) => {
       const data = await market.get({ fresh: url.searchParams.get('refresh') === '1' });
@@ -108,7 +118,13 @@ export function createApp({ market, mcp, ticker, minerWars }) {
     },
     '/api/history': async () => ({ rows: await market.history() }),
     '/api/ticker': async () => (ticker ? ticker.get() : { btc: null, gomining: null, coins: [] }),
-    '/api/minerwars': async () => (minerWars ? minerWars.get() : { status: 'unavailable', error: 'Miner Wars data is not configured' }),
+    '/api/minerwars/leagues': async () => needs(minerWars, 'Miner Wars').leagues(),
+    '/api/minerwars/board': async (url) => needs(minerWars, 'Miner Wars').board(Number(url.searchParams.get('league'))),
+    '/api/minerwars/search': async (url) => needs(minerWars, 'Miner Wars').search(url.searchParams.get('q')),
+    '/api/minerwars/spells': async () => needs(platform, 'Platform data').spells(),
+    '/api/platform': async () => needs(platform, 'Platform data').platform(),
+    '/api/tokenomics': async () => needs(platform, 'Platform data').tokenomics(),
+    '/api/prices/history': async () => needs(external, 'Price history').priceHistory(),
     '/api/earnings': async (url) => {
       const query = url.searchParams;
       const powerTh = positive(query.get('powerTh'));
@@ -174,10 +190,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv
   const key = process.env.MCP_ACCESS_KEY?.trim();
   // The remote MCP is public-data only: no GoMining token and no raw API passthrough, so a leaked
   // connector URL can't act on anyone's account. Account tools run only in the local (stdio) server.
-  const mcp = key ? { key, client: dashboard.client, market: dashboard.market, minerWars: dashboard.minerWars, remote: true } : undefined;
-  // One ExternalService for the ticker and the dashboard, so they share CoinGecko answers.
-  const ticker = new TickerService({ external: dashboard.market.external ?? new ExternalService() });
-  createHttpServer(createApp({ market: dashboard.market, mcp, ticker, minerWars: dashboard.minerWars })).listen(port, host, () => {
+  const mcp = key ? { key, client: dashboard.client, market: dashboard.market, minerWars: dashboard.minerWars, platform: dashboard.platform, remote: true } : undefined;
+  // One ExternalService for the ticker, price history and the dashboard, so they share CoinGecko answers.
+  const external = dashboard.external ?? new ExternalService();
+  const ticker = new TickerService({ external });
+  createHttpServer(createApp({ market: dashboard.market, mcp, ticker, minerWars: dashboard.minerWars, platform: dashboard.platform, external })).listen(port, host, () => {
     console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     if (key && key.length < MIN_KEY_LENGTH) console.log(`Remote MCP is OFF: MCP_ACCESS_KEY must be at least ${MIN_KEY_LENGTH} characters`);
     else console.log(`Remote MCP: ${key ? 'on at /mcp/<MCP_ACCESS_KEY>' : 'off (MCP_ACCESS_KEY not set)'}`);

@@ -238,6 +238,59 @@ export function lineChart(container, { xLabels, series, format, tickFormat = for
 }
 
 /**
+ * Calendar heatmap: one square per day, a column per week (Monday on top), the latest week on the
+ * right. days: [{ date: 'YYYY-MM-DD', value, title, rows }]. Positive values use `up`, negative
+ * `down`, with opacity growing with the size of the move up to `cap`.
+ */
+export function calendarHeatmap(container, { days, format, cap, up = 'var(--good)', down = 'var(--critical)' }) {
+  const list = days.filter((d) => typeof d.value === 'number' && Number.isFinite(d.value));
+  if (!list.length) return;
+  const parse = (iso) => new Date(`${iso}T00:00:00Z`);
+  const first = parse(list[0].date);
+  const weekday = (date) => (date.getUTCDay() + 6) % 7;
+  const start = new Date(first.getTime() - weekday(first) * 86_400_000);
+  const weeks = Math.floor((parse(list.at(-1).date) - start) / (7 * 86_400_000)) + 1;
+  const left = 30;
+  const top = 18;
+  const width = Math.max(container.clientWidth, 280);
+  const gap = 2;
+  const cell = Math.max(4, Math.min(16, Math.floor((width - left - 4) / weeks) - gap));
+  const height = top + 7 * (cell + gap) + 4;
+  container.querySelector(':scope > svg')?.remove();
+  const svg = el('svg', { width: left + weeks * (cell + gap), height, viewBox: `0 0 ${left + weeks * (cell + gap)} ${height}`, class: 'chart-svg heat' });
+  container.prepend(svg);
+  const tip = tooltip(container);
+  const limit = cap ?? Math.max(...list.map((d) => Math.abs(d.value)), 1e-9);
+  ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].forEach((label, i) => {
+    if (label) text(svg, left - 6, top + i * (cell + gap) + cell - 1, label, { 'text-anchor': 'end', class: 'tick' });
+  });
+  let lastMonth = -1;
+  for (const d of list) {
+    const date = parse(d.date);
+    const column = Math.floor((date - start) / (7 * 86_400_000));
+    const row = weekday(date);
+    const x = left + column * (cell + gap);
+    const y = top + row * (cell + gap);
+    if (row === 0 && date.getUTCMonth() !== lastMonth && column < weeks - 1) {
+      lastMonth = date.getUTCMonth();
+      text(svg, x, top - 6, date.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' }), { class: 'tick' });
+    }
+    const strength = Math.min(Math.abs(d.value) / limit, 1);
+    const square = el('rect', {
+      x, y, width: cell, height: cell, rx: 2, class: 'heat-cell', tabindex: 0, role: 'img',
+      'aria-label': `${d.title ?? d.date}: ${format(d.value)}`,
+      fill: d.value === 0 ? 'var(--surface-3)' : d.value > 0 ? up : down,
+      'fill-opacity': d.value === 0 ? 1 : 0.2 + 0.8 * strength,
+    }, svg);
+    const show = () => tip.show(x + cell / 2, y, d.title ?? d.date, d.rows ?? [{ value: format(d.value), label: '' }]);
+    square.addEventListener('pointerenter', show);
+    square.addEventListener('focus', show);
+    square.addEventListener('pointerleave', tip.hide);
+    square.addEventListener('blur', tip.hide);
+  }
+}
+
+/**
  * One horizontal stacked bar (24px) splitting a total into segments, 2px surface gaps between
  * segments, rounded at the data end only. segments: [{ name, value, color }].
  */

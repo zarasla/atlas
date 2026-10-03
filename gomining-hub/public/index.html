@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HONKSQUAD · Mining HQ</title>
-  <meta name="description" content="HONKSQUAD's GoMining dashboard: rewards calculator, Miner Wars standings, VIP and discount builder, Simple Earn, miner payback, Bitcoin network and live prices.">
+  <meta name="description" content="Free GoMining calculators on GoMining's own live data: rewards and payback, discount builder, VIP levels, Simple Earn, upgrade planner, Miner Wars clan finder, Burn &amp; Mint and veGOMINING, platform stats and live prices.">
   <!-- Discord link preview. __ORIGIN__ is filled in by the server with the site's own address. -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="HONKSQUAD">
   <meta property="og:title" content="HONKSQUAD · Mining HQ">
-  <meta property="og:description" content="GoMining rewards calculator, HONKSQUAD Miner Wars standings, VIP and discount builder, Simple Earn, payback and live prices.">
+  <meta property="og:description" content="GoMining calculators on GoMining's own live data: rewards, discounts, VIP, Simple Earn, upgrades, Miner Wars clan finder, Burn &amp; Mint, veGOMINING and live prices.">
   <meta property="og:url" content="__ORIGIN__/">
   <meta property="og:image" content="__ORIGIN__/og-image.jpg">
   <meta property="og:image:width" content="1200">
@@ -62,7 +62,10 @@
     <nav class="jump" id="jump" aria-label="Sections">
       <a href="#g-today">Today</a>
       <a href="#g-calc">Calculators</a>
-      <a href="#g-clan">HONKSQUAD</a>
+      <a href="#g-plan">Planning</a>
+      <a href="#g-mw">Miner Wars</a>
+      <a href="#g-token">GOMINING</a>
+      <a href="#g-platform">Platform</a>
       <a href="#g-market">Market &amp; miners</a>
       <a href="#history">History</a>
     </nav>
@@ -162,19 +165,19 @@
       <details class="gc-hint">
         <summary>Which discounts, prices and payouts to enter?</summary>
         <ul>
-          <li><strong>Total maintenance discount</strong> is the combined discount on electricity + service your GoMining app shows for your miners. It adds up paying maintenance in GOMINING (up to 20%), your VIP level (0% to 6%), the Service Button (0.3% a day pressed in a row, up to 3%) and Mining mode (about 1.2%): 30.2% at most. Enter the total from your app, or work it out with <strong>Build your discount</strong> below.</li>
+          <li><strong>Total maintenance discount</strong> is the combined discount on electricity + service your GoMining app shows for your miners (Rewards → Maintenance). It adds up paying maintenance in GOMINING (up to 20%), your VIP level (0% to 6%) and the Service Button (0.3% a day pressed in a row, up to 3%), 29% together at most, plus the Mining mode discount, which GoMining changes every week with the veGOMINING vote. Enter the total from your app, or work it out with <strong>Build your discount</strong> below. Discounts don't apply to the Bonus Miner.</li>
           <li><strong>Electricity</strong> defaults to the rate in GoMining's latest payout data. Enter a different $/kWh if your miners use another rate.</li>
           <li><strong>Price per TH, new purchases</strong> defaults to GoMining's listed price for new miners (primary market, not the secondary marketplace).</li>
-          <li><strong>Reinvesting</strong> into an existing miner is priced as a power upgrade, not as a new miner. Enter the power-upgrade price per TH your app shows, and any reinvest bonus (for example a VIP +5% or +10%). GoMining's reinvestment eligibility rules and minimums aren't checked here.</li>
+          <li><strong>Reinvesting</strong> into an existing miner is priced as a power upgrade, not as a new miner. Enter the power-upgrade price per TH your app shows, and your VIP reinvest bonus (+5% from Silver I, +10% from Diamond I). The plan reinvests day by day under GoMining's rules: the miner needs 10 to 5,000 TH and better than 20 W/TH, and a day's reward must be at least $0.10, or it's paid in BTC instead.</li>
           <li><strong>365-day average</strong> is GoMining's total gross payout per TH over the last year divided by 365, which smooths out daily swings.</li>
           <li><strong>BTC price</strong> scenarios keep your sats per TH the same (set by network difficulty, not price) and value them at the chosen price; electricity and service fees stay in USD. Difficulty is held constant, although in reality it tends to rise when BTC does.</li>
           <li><strong>Pre-halving.</strong> Every figure uses today's payout. The next halving (about April 2028) halves the BTC paid per TH; where BTC's price goes then can't be predicted, so it isn't modelled. Paybacks that run past it are estimates at today's rates only.</li>
-          <li>Miner Wars rewards aren't included here: see <a href="#miner-wars">HONKSQUAD in Miner Wars</a> for the clan's numbers and a Miner Wars vs plain mining comparison.</li>
+          <li>Miner Wars rewards aren't included here: see <a href="#g-mw">Miner Wars</a> to compare any clan with plain mining and find the clan that pays your miners best.</li>
         </ul>
       </details>
 
       <details class="gc-builder" id="db">
-        <summary><span class="db-icon" aria-hidden="true">%</span><span class="db-title">Build your discount</span><span class="db-desc">GOMINING balance + VIP level + Service Button + Mining mode</span><span class="db-badge">Save up to 30.2%</span></summary>
+        <summary><span class="db-icon" aria-hidden="true">%</span><span class="db-title">Build your discount</span><span class="db-desc">GOMINING balance + VIP level + Service Button + Mining mode</span><span class="db-badge">29% + Mining mode</span></summary>
         <form id="db-form" class="db-grid" autocomplete="off">
           <label class="field"><span>GOMINING held (wallet + locked)</span><input name="gominingHeld" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
           <label class="field"><span>VIP level</span><select name="vipLevel" id="db-vip"></select></label>
@@ -184,10 +187,10 @@
               <option value="0">Not using it (0%)</option><option value="1">1 day (0.3%)</option><option value="2">2 days (0.6%)</option><option value="3">3 days (0.9%)</option><option value="4">4 days (1.2%)</option><option value="5">5 days (1.5%)</option><option value="6">6 days (1.8%)</option><option value="7">7 days (2.1%)</option><option value="8">8 days (2.4%)</option><option value="9">9 days (2.7%)</option><option value="10">10+ days (3%)</option>
             </select>
           </label>
-          <label class="check"><input name="miningMode" type="checkbox"> I'm in Mining mode, not Miner Wars (about +1.2%)</label>
+          <label class="field"><span>Mining mode discount (%), from your app</span><input name="miningModePct" type="number" min="0" max="100" step="any" placeholder="0" inputmode="decimal"></label>
           <div class="db-out" id="db-out" aria-live="polite"></div>
         </form>
-        <p class="fine">Uses the power and efficiency above. Paying in GOMINING gives 1% for every 18 days of maintenance your GOMINING balance (wallet plus locked) covers, up to 20% at 360 days. VIP goes from 0% (Bronze I) to 6% (Elite), and from Silver I it also adds +5% TH when reinvesting (+10% from Diamond I). The Service Button adds 0.3% for each day you press it in a row, up to 3% after 10 days; missing a day resets it. Mining mode has its own small discount: GoMining puts the total at 30.2% at most, which leaves about 1.2% for it.</p>
+        <p class="fine">Uses the power and efficiency above. Paying in GOMINING gives 1% for every 18 days of maintenance your GOMINING balance (wallet plus locked) covers, up to 20% at 360 days, and needs "Maintenance in GOMINING" switched on in your reward settings. VIP goes from 0% (Bronze I) to 6% (Elite), and from Silver I it also adds +5% TH when reinvesting (+10% from Diamond I). The Service Button adds 0.3% for each day you press it in a row (UTC days), up to 3% after 10 days; missing a day resets it. Mining mode has its own discount for everyone in Mining mode (not in Miner Wars, not during the trial): GoMining sets it every week from the Burn &amp; Mint cycle and the veGOMINING vote and shows it only in your rewards, so copy it from there (leave it empty if you play Miner Wars).</p>
       </details>
 
       <div id="gc-rewards" aria-live="polite">
@@ -219,17 +222,17 @@
         <header class="card-head">
           <div>
             <h2>Your VIP level</h2>
-            <p class="card-sub">Reached by any one of three paths: your mining power, locked veGOMINING, or referral activity over the last 180 days</p>
+            <p class="card-sub">From your mining power or your veGOMINING votes, whichever is higher (GoMining's official VIP table)</p>
           </div>
         </header>
         <form id="vip-form" class="vip-form" autocomplete="off">
           <label class="field"><span>Mining power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
-          <label class="field"><span>Locked veGOMINING</span><input name="veGomining" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
-          <label class="field"><span>Referrals, last 180 days ($)</span><input name="referralUsd" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
+          <label class="field"><span>veGOMINING votes</span><input name="veGomining" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
         </form>
         <div id="vip-out" aria-live="polite"></div>
         <button class="link-btn spaced" type="button" data-table-toggle="vip">All VIP levels</button>
         <div class="table-wrap scroll" id="vip-table" hidden></div>
+        <p class="fine">Only power you created or bought from GoMining counts (miners bought from other users after 15 Aug 2025 and the Bonus Miner don't). veGOMINING votes fall every week, so a level held by votes can slip. Referral activity over the last 180 days is a third path; GoMining shows its thresholds only in the app.</p>
       </article>
 
       <article class="card">
@@ -240,15 +243,15 @@
           </div>
         </header>
         <form id="se-form" class="se-form" autocomplete="off">
-          <label class="field"><span>Asset</span>
-            <select name="asset"><option>USDT</option><option>USDC</option><option>BTC</option><option>BNB</option></select>
-          </label>
+          <label class="field"><span>Asset</span><select name="asset"></select></label>
           <label class="field"><span>Amount</span><input name="amount" type="number" min="0" step="any" value="1000" inputmode="decimal"></label>
-          <label class="field"><span>Base APR (%)</span><input name="aprPct" type="number" min="0" step="any" value="9.85" inputmode="decimal"></label>
+          <label class="field"><span>Base APR (%), from your wallet</span><input name="aprPct" type="number" min="0" step="any" placeholder="e.g. as shown in the app" inputmode="decimal"></label>
           <label class="field"><span>VIP level</span><select name="vipLevel" id="se-vip"></select></label>
+          <label class="field" data-se-price hidden><span>Asset price (USD)</span><input name="assetPriceUsd" type="number" min="0" step="any" inputmode="decimal"></label>
+          <label class="check"><input name="rewardInTh" type="checkbox"> Rewards in TH (+10% TH)</label>
         </form>
         <div id="se-out" aria-live="polite"></div>
-        <p class="fine">Base APRs change: the defaults are GoMining's published rates as checked in October 2026 (USDT and USDC 9.85%, BTC 3.03%, BNB 1.52%). Check the current rate in your GoMining wallet. Rewards are paid in BTC and shown at today's BTC price.</p>
+        <p class="fine">GoMining sets each asset's APR and changes it often, and shows the current one only in your wallet (Wallet → Simple Earn), so type it in; this site never assumes a rate. Rewards are counted on the lowest balance in each full 4-hour cycle and paid in BTC, or in TH with 10% more TH when a cycle earns at least $0.10. Needs KYC Basic and isn't offered in some countries, including the United States.</p>
       </article>
     </section>
 
@@ -272,41 +275,220 @@
       <div id="mm-body"></div>
     </section>
 
-    <div class="group-title" id="g-clan"><h2>HONKSQUAD</h2><p>The clan in Miner Wars</p></div>
+    <div class="group-title" id="g-plan"><h2>Planning</h2><p>Where your money works hardest, at today's GoMining payout and fees</p></div>
 
-    <section class="card mw" id="miner-wars">
+    <section class="card" id="matrix-card">
       <header class="card-head">
         <div>
-          <h2>HONKSQUAD in Miner Wars</h2>
-          <p class="card-sub" id="mw-sub">Live from GoMining's public Miner Wars leaderboard</p>
+          <h2>Profit by BTC price and efficiency</h2>
+          <p class="card-sub" id="mx-sub">Net reward per TH per day, after your discount from the calculator, at today's difficulty</p>
+        </div>
+        <label class="field inline"><span>Custom BTC price</span><input id="mx-custom" type="number" min="1" step="any" placeholder="e.g. 250000" inputmode="decimal"></label>
+      </header>
+      <div class="table-wrap" id="mx-table"></div>
+      <p class="fine">Sats per TH are set by network difficulty, not price, so they stay at today's value and only their USD worth moves; electricity and service stay in USD. Green pays, red costs money. Difficulty usually rises when BTC does, so higher-price columns are optimistic. Pre-halving.</p>
+    </section>
+
+    <section class="grid-2">
+      <article class="card" id="uc-card">
+        <header class="card-head">
+          <div>
+            <h2>Better efficiency or more TH?</h2>
+            <p class="card-sub">The same budget spent on W/TH upgrades (GoMining's step prices) or on more power</p>
+          </div>
+        </header>
+        <form id="uc-form" class="pl-form" autocomplete="off">
+          <label class="field"><span>Miner power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="50" inputmode="decimal"></label>
+          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="18" inputmode="decimal"></label>
+          <label class="field"><span>Budget (USD)</span><input name="budgetUsd" type="number" min="0" step="any" value="250" inputmode="decimal"></label>
+          <label class="field"><span>Price per extra TH (USD)</span><input name="powerPricePerThUsd" type="number" min="0" step="any" placeholder="New-miner list price" inputmode="decimal"></label>
+        </form>
+        <div id="uc-out" aria-live="polite"></div>
+        <p class="fine">Efficiency steps are GoMining's live upgrade prices per TH, one W/TH at a time. Extra TH defaults to GoMining's new-miner list price per TH at your efficiency; your app's power-upgrade price for this miner can be lower, so enter it for the exact answer. Uses the discount and electricity rate from the calculator.</p>
+      </article>
+
+      <article class="card" id="evm-card">
+        <header class="card-head">
+          <div>
+            <h2>Simple Earn or mining?</h2>
+            <p class="card-sub">The same money in Simple Earn, or in a new GoMining miner</p>
+          </div>
+        </header>
+        <form id="evm-form" class="pl-form" autocomplete="off">
+          <label class="field"><span>Amount (USD)</span><input name="capitalUsd" type="number" min="0" step="any" value="1000" inputmode="decimal"></label>
+          <label class="field"><span>Simple Earn APR (%), from your wallet</span><input name="aprPct" type="number" min="0" step="any" placeholder="e.g. your USDT rate" inputmode="decimal"></label>
+          <label class="field"><span>Miner efficiency</span><select name="efficiencyWth"></select></label>
+        </form>
+        <div id="evm-out" aria-live="polite"></div>
+        <p class="fine">Simple Earn keeps your capital and pays its APR × your VIP multiplier (VIP level from the discount builder). The miner is bought at GoMining's list price per TH and earns today's net reward after your discount; you keep the miner, but what it would sell for later can't be predicted, so it isn't counted. Pre-halving.</p>
+      </article>
+    </section>
+
+    <div class="group-title" id="g-mw"><h2>Miner Wars</h2><p>Any league and any clan, live from GoMining's public leaderboards</p></div>
+
+    <section class="card mw" id="mw-card">
+      <header class="card-head">
+        <div>
+          <h2>League explorer</h2>
+          <p class="card-sub" id="mw-sub">Pick a league or find a clan by name</p>
         </div>
         <p class="mw-clock" id="mw-clock"></p>
       </header>
-      <div id="mw-body"><div class="empty">Loading the leaderboard…</div></div>
-      <div class="mw-panels" id="mw-panels" hidden>
-        <div>
-          <h3 class="mw-h">Around us</h3>
-          <div class="table-wrap" id="mw-neighbours"></div>
-          <button class="link-btn spaced" type="button" data-table-toggle="mw-board">Whole league</button>
-          <div class="table-wrap scroll" id="mw-board-table" hidden></div>
-        </div>
-        <div>
-          <h3 class="mw-h">Members <span id="mw-members-note"></span></h3>
-          <div class="table-wrap scroll" id="mw-members"></div>
-        </div>
-      </div>
-      <div class="mw-vs" id="mw-vs" hidden>
-        <h3 class="mw-h">Miner Wars or plain mining? <span>one week, your miners</span></h3>
-        <form id="vs-form" class="vs-form" autocomplete="off">
-          <label class="field"><span>Member (fills TH)</span><select name="member"><option value="">Choose…</option></select></label>
-          <label class="field"><span>Your TH</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
-          <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
-          <label class="field"><span>Maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
-          <label class="check"><input name="joining" type="checkbox"> I'm not in HONKSQUAD yet</label>
+      <div class="mw-controls">
+        <label class="field inline"><span>League</span><select id="mw-league"></select></label>
+        <form id="mw-search" class="mw-search" autocomplete="off" role="search">
+          <label class="field inline"><span>Find a clan</span><input name="q" type="search" minlength="2" maxlength="60" placeholder="Clan name"></label>
+          <button class="btn" type="submit">Search</button>
         </form>
-        <div class="vs-out" id="vs-out" aria-live="polite"></div>
-        <p class="fine" id="vs-note"></p>
       </div>
+      <div id="mw-results" aria-live="polite"></div>
+      <div id="mw-stats"><div class="empty">Loading the leagues…</div></div>
+      <div class="table-wrap scroll" id="mw-board"></div>
+      <p class="fine">Click a clan to compare a week in it with plain mining. BTC so far is gross, before maintenance: blocks won × the league's BTC per block (prize fund so far ÷ blocks mined so far).</p>
+    </section>
+
+    <section class="card" id="mw-vs-card">
+        <header class="card-head">
+          <div>
+            <h2 id="mw-vs-title">A week in a clan, or plain mining?</h2>
+            <p class="card-sub" id="mw-vs-sub">Choose a clan on the board above</p>
+          </div>
+        </header>
+        <form id="mw-you" class="vs-form" autocomplete="off">
+          <label class="field"><span>Your TH</span><input name="powerTh" type="number" min="0" step="any" value="100" inputmode="decimal"></label>
+          <label class="field"><span>Your W/TH</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
+          <label class="field"><span>Your discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+          <label class="check"><input name="member" type="checkbox"> I'm already in this clan</label>
+        </form>
+        <div class="vs-out" id="mw-vs-out" aria-live="polite"></div>
+        <p class="fine" id="mw-vs-note"></p>
+    </section>
+
+    <section class="card" id="mw-finder-card">
+        <header class="card-head">
+          <div>
+            <h2>Best clan for your miners</h2>
+            <p class="card-sub" id="mw-finder-sub">Every clan in the league, ranked by what a week would pay you</p>
+          </div>
+        </header>
+        <div class="table-wrap scroll" id="mw-finder"></div>
+        <p class="fine">Uses your TH, W/TH and discount from the form above, each clan's pace so far this cycle, and GoMining's rules: a full week of maintenance on all your TH comes out of your share (never below zero), reward beyond what Mining mode would pay is charged at the league's average W/TH and discount, and the day you join earns no Mining mode reward. Each clan keeps winning at its pace so far, your TH adds its own fair chance (the league's blocks × your share of league power), and the BTC is shared by TH. <strong>Blocks vs power</strong> is the clan's share of blocks over its share of power: about ×1 means it wins on power; far above ×1 (marked) means it wins on spells, which only continues while its members keep casting them, and such clans often set entry requirements. Round multipliers, spells and other players change the real outcome.</p>
+    </section>
+
+    <section class="grid-2">
+      <article class="card" id="mw-odds-card">
+        <header class="card-head">
+          <div>
+            <h2>Points and multipliers</h2>
+            <p class="card-sub" id="mw-odds-sub">GoMining's published round-multiplier odds for the league</p>
+          </div>
+        </header>
+        <div id="mw-pps"></div>
+        <div class="table-wrap" id="mw-odds"></div>
+        <p class="fine">Points per second = TH × 20 ÷ your W/TH (GoMining's base efficiency is 20 W/TH); spells and boosts don't change it. Each round is one Bitcoin block (about 120–150 a day), and winning a ×32 round counts as 32 wins. The prize fund is fixed, so multipliers only change how it is split. Top 5 clans in Odyssey, Eclipse and Horizon move up and the bottom 5 move down each cycle; Dune numbers vary.</p>
+      </article>
+
+      <article class="card" id="mw-spells-card">
+        <header class="card-head">
+          <div>
+            <h2>Spells on sale</h2>
+            <p class="card-sub">GOMINING price of each spell and power-up right now</p>
+          </div>
+        </header>
+        <div class="table-wrap scroll" id="mw-spells"></div>
+        <p class="fine">97.5% of GOMINING spent on spells goes to the personal-battle prize pool (2.5% to development). The Clan Owner takes 5% of a member's GOMINING winnings. Platinum+ gives 15% off spells cast by the Spell Bot.</p>
+      </article>
+    </section>
+
+    <div class="group-title" id="g-token"><h2>GOMINING token</h2><p>Burn &amp; Mint, epochs, veGOMINING and price history, from GoMining's public record</p></div>
+
+    <section class="grid-2">
+      <article class="card" id="bm-card">
+        <header class="card-head">
+          <div>
+            <h2>Burn &amp; Mint</h2>
+            <p class="card-sub" id="bm-sub">Every Tuesday GoMining burns the GOMINING paid for maintenance and mints fewer back</p>
+          </div>
+          <button class="link-btn" type="button" data-table-toggle="bm">Table</button>
+        </header>
+        <div id="bm-stats"><div class="empty">Loading the Burn &amp; Mint record…</div></div>
+        <div class="legend" id="bm-legend"></div>
+        <div class="chart" id="bm-chart"></div>
+        <div class="table-wrap scroll" id="bm-table" hidden></div>
+        <p class="fine" id="bm-note">Minted = (1 − V × (1 − C)) × burned, where C is the epoch's mint coefficient and V the share of veGOMINING votes for burning; V is read back from each week's numbers. New tokens go 65% to hashpower providers, 20% to veGOMINING holders, 10% to GOMINING rewards (Mining mode discount, Odyssey prizes, Greedy Machines) and 5% to the team.</p>
+      </article>
+
+      <article class="card" id="ve-card">
+        <header class="card-head">
+          <div>
+            <h2>veGOMINING lock</h2>
+            <p class="card-sub">Votes, VIP level and rewards from locking GOMINING</p>
+          </div>
+        </header>
+        <form id="ve-form" class="pl-form" autocomplete="off">
+          <label class="field"><span>GOMINING to lock</span><input name="amount" type="number" min="0" step="any" value="5000" inputmode="decimal"></label>
+          <label class="field"><span>Lock length</span>
+            <select name="lockDays">
+              <option value="7">1 week</option><option value="30">1 month</option><option value="91">3 months</option><option value="182">6 months</option><option value="365">1 year</option><option value="730">2 years</option><option value="1096">3 years</option><option value="1461" selected>4 years (most votes)</option>
+            </select>
+          </label>
+        </form>
+        <div id="ve-out" aria-live="polite"></div>
+        <div class="chart" id="ve-chart"></div>
+        <p class="fine">Votes = tokens × lock days ÷ 1,461 (4 years), falling each week to zero when the lock ends; locked tokens can't be withdrawn early. Rewards use GoMining's current yearly income per vote, which moves every week with the Burn &amp; Mint cycle, so treat them as an estimate. Votes count towards your VIP level, and the locked tokens count, with your wallet balance, towards the GOMINING maintenance discount.</p>
+      </article>
+    </section>
+
+    <section class="card" id="heat-card">
+      <header class="card-head">
+        <div>
+          <h2>Price calendar</h2>
+          <p class="card-sub" id="heat-sub">Daily price change over the last year (CoinGecko)</p>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Asset" id="heat-asset">
+          <button type="button" role="radio" aria-checked="true" data-asset="btc">BTC</button>
+          <button type="button" role="radio" aria-checked="false" data-asset="gomining">GOMINING</button>
+        </div>
+      </header>
+      <div class="chart" id="heat-chart"></div>
+      <div class="heat-legend" id="heat-legend"></div>
+    </section>
+
+    <div class="group-title" id="g-platform"><h2>GoMining platform</h2><p>Live platform counters, and how to see your own account in Claude</p></div>
+
+    <section class="grid-2">
+      <article class="card" id="pf-card">
+        <header class="card-head">
+          <div>
+            <h2>Platform in numbers</h2>
+            <p class="card-sub" id="pf-sub">GoMining's public statistics, with its own one-day changes</p>
+          </div>
+        </header>
+        <div id="pf-body"><div class="empty">Loading GoMining's statistics…</div></div>
+      </article>
+
+      <article class="card" id="mcp-card">
+        <header class="card-head">
+          <div>
+            <h2>Your own stats in Claude</h2>
+            <p class="card-sub">GoMining's official MCP connector reads your account, read-only</p>
+          </div>
+        </header>
+        <ol class="steps">
+          <li>Sign in to <strong>app.gomining.com</strong> in your browser.</li>
+          <li>In Claude, open <strong>Customize → Connectors</strong>, press <strong>+</strong> and choose <strong>Add custom connector</strong>.</li>
+          <li>Name it <strong>GoMining</strong> and paste the server URL: <code class="mcp-url" id="mcp-url">https://mcp.gomining.com/mcp</code> <button class="link-btn" type="button" id="mcp-copy">Copy</button></li>
+          <li>Press <strong>Connect</strong> and approve access on GoMining's consent screen.</li>
+        </ol>
+        <p class="card-sub">Then ask things like:</p>
+        <ul class="asks">
+          <li>“What did my miners earn this month, day by day?”</li>
+          <li>“What's my VIP level and how far is the next one?”</li>
+          <li>“Show my Simple Earn rates and rewards.”</li>
+          <li>“Which of my miners should I upgrade first?”</li>
+        </ul>
+        <p class="fine">The connector is GoMining's own (docs.gomining.com → GoMining AI → MCP Server). It works in Claude, Claude Code, Cursor and other MCP apps, is read-only (it can't move funds or change settings) and never passes through this site. Answers are AI-generated, so double-check anything important in the app.</p>
+      </article>
     </section>
 
     <div class="group-title" id="g-market"><h2>Market &amp; miners</h2><p>Where the payout goes, GoMining's miners, prices and upgrades</p></div>
@@ -403,12 +585,14 @@
     <details class="card help">
       <summary><h2>How it works</h2></summary>
       <div class="help-body">
-        <p><strong>Where the numbers come from.</strong> GoMining publishes the daily payout per TH, the BTC price it uses, the electricity and service fees and its miner prices. This site reads them live every few minutes, adds Bitcoin network data from mempool.space and prices from CoinGecko, and does the maths.</p>
-        <p><strong>Net reward</strong> = payout − electricity (your W/TH × the electricity rate) − service fee, per TH per day. Your <strong>total maintenance discount</strong> (Mining mode, Service Button, GOMINING payment and VIP discounts, as your app shows them; 30.2% at most) reduces electricity + service by that percentage. GoMining settles the payout once a day, so the numbers change daily, not live.</p>
+        <p><strong>Where the numbers come from.</strong> Only from GoMining itself and public sources: GoMining's live public API (daily payout per TH, the BTC rate it used, electricity and service fees, miner prices, upgrade prices, Miner Wars leagues and boards, spells, Burn &amp; Mint, veGOMINING and platform statistics), GoMining's documentation and official VIP table for the rules, mempool.space for the Bitcoin network and CoinGecko for prices. Anything GoMining shows only inside your account (your Mining mode discount, your Simple Earn APRs) you type in yourself: the site never guesses it.</p>
+        <p><strong>Net reward</strong> = payout − (electricity + service) × (1 − discounts), per TH per day, GoMining's own formula. Electricity is your W/TH × GoMining's rate per kWh × 24 h. Your <strong>total maintenance discount</strong> (GOMINING payment up to 20%, VIP up to 6%, Service Button up to 3%, plus the weekly Mining mode discount) reduces electricity + service by that percentage. GoMining settles the payout once a day, so the numbers change daily, not live.</p>
         <p><strong>Pre-halving only.</strong> Every estimate uses today's payout. The next halving (about April 2028) halves the BTC paid per TH, and nobody can say what BTC's price will do then, so it isn't modelled.</p>
         <p><strong>My miners</strong> stays in your own browser. Clearing your browser data or switching device starts it empty again. Your GoMining account is never connected or asked for.</p>
         <p><strong>Estimates, not promises.</strong> Everything assumes the latest payout and fees stay the same, and the calculators don't include Miner Wars rewards. BTC price, network difficulty and GoMining's fees change, so treat payback and plans as a guide. Not financial advice.</p>
-        <p><strong>HONKSQUAD in Miner Wars</strong> reads GoMining's public Miner Wars leaderboards for the current cycle (the same ones the app shows): the clan board every 10 minutes and the player list every 30. The clan's BTC is estimated as blocks won × the league's average BTC per block (prize fund so far ÷ blocks mined so far), and shared among members by TH. That is <em>before maintenance</em>: GoMining takes a full week of maintenance on each member's TH out of their share, and a share smaller than that pays nothing (never a debt). Reward above what you'd earn in Mining mode is charged at the league's average W/TH and discount. Spells and GOMINING rewards aren't included.</p>
+        <p><strong>Miner Wars</strong> reads GoMining's public leagues and clan boards for the current cycle (Tuesday to Tuesday UTC), each board at most every 10 minutes. A clan's BTC is estimated as blocks won × the league's BTC per block (prize fund so far ÷ blocks mined so far) and shared among members by TH. That is <em>before maintenance</em>: GoMining takes a full week of maintenance on each member's TH out of their share, and a share smaller than that pays nothing (never a debt). Reward above what you'd earn in Mining mode is charged at the league's average W/TH and discount, and the day you join a clan earns no Mining mode reward. GoMining weights each round by its multiplier, which can't be known in advance, so a week's projection treats rounds as equal. Spells and GOMINING rewards aren't included.</p>
+        <p><strong>GOMINING token</strong>: Burn &amp; Mint comes from GoMining's public record of every weekly cycle, epochs and mint coefficients from GoMining's tokenomics docs, veGOMINING totals and the yearly income per vote from GoMining's lock statistics. Votes = tokens × lock days ÷ 1,461, which matches GoMining's own totals.</p>
+        <p><strong>Your own account</strong> isn't connected to this site. For your real balances, rewards and rates, use GoMining's official MCP connector in Claude (see Platform).</p>
         <p><strong>Outlook</strong>: break-even BTC price = electricity + service per TH ÷ BTC paid per TH, at today's difficulty. The halving countdown uses the current block height from mempool.space and 10-minute blocks (the pace difficulty adjustments aim for). Fear &amp; Greed comes from alternative.me.</p>
         <p><strong>Share a calculation</strong> with “Copy link for Discord”: the link opens the calculator with your exact numbers.</p>
       </div>
@@ -416,7 +600,7 @@
 
     <footer class="foot">
       <img src="goose-logo-160.webp" alt="" width="28" height="28">
-      <p>Built for HONKSQUAD by The Goose's. Data: GoMining's public API (payout, fees, miner prices, upgrade rates), GoMining's public Miner Wars leaderboards, mempool.space (Bitcoin network), CoinGecko (prices) and alternative.me (Fear &amp; Greed). Estimates use GoMining's latest daily payout and fees plus the discounts you enter. They are pre-halving and exclude Miner Wars rewards and future BTC price, difficulty or fee changes. Not financial advice.</p>
+      <p>Built by HONKSQUAD · The Goose's. Not affiliated with GoMining. Data: GoMining's public API and documentation (payout, fees, miner and upgrade prices, Miner Wars, Burn &amp; Mint, veGOMINING, platform statistics, VIP table), mempool.space (Bitcoin network), CoinGecko (prices) and alternative.me (Fear &amp; Greed). Estimates use GoMining's latest daily payout and fees plus the discounts you enter. They are pre-halving and exclude future BTC price, difficulty or fee changes. Not financial advice.</p>
     </footer>
   </main>
 

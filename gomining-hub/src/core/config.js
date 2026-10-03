@@ -12,14 +12,17 @@ import { DEFAULT_BASE_URL, GoMiningClient } from './client.js';
 import { ExternalService } from './external.js';
 import { MarketService } from './market.js';
 import { MinerWarsService } from './minerwars.js';
+import { PlatformService } from './platform.js';
 
 export function fromEnv(env = process.env, { withToken = true } = {}) {
   const client = new GoMiningClient({
     baseUrl: env.GOMINING_BASE_URL || DEFAULT_BASE_URL,
     token: withToken ? env.GOMINING_TOKEN?.replace(/^Bearer\s+/i, '').trim() : undefined,
   });
-  const market = new MarketService({ client, external: new ExternalService(), ...(env.GOMINING_HISTORY_PATH ? { historyPath: env.GOMINING_HISTORY_PATH } : {}) });
-  // Miner Wars boards are public and always fetched without the token (auth: false).
+  const external = new ExternalService();
+  const market = new MarketService({ client, external, ...(env.GOMINING_HISTORY_PATH ? { historyPath: env.GOMINING_HISTORY_PATH } : {}) });
+  // Miner Wars boards and platform statistics are public and always fetched without the token.
   const minerWars = new MinerWarsService({ client });
-  return { client, market, minerWars, allowWrites: withToken && env.GOMINING_ALLOW_WRITES === '1' };
+  const platform = new PlatformService({ client });
+  return { client, market, external, minerWars, platform, allowWrites: withToken && env.GOMINING_ALLOW_WRITES === '1' };
 }

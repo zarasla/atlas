@@ -8,10 +8,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { halving, investmentPlan, maintenanceDiscount, minerWarsClanNet, minerWarsVsSolo, normalizeIncome } from '../src/core/calc.js';
+import { halving, investmentPlan, leagueDisplayName, maintenanceDiscount, minerWarsClanNet, minerWarsVsSolo, normalizeIncome } from '../src/core/calc.js';
 import { GoMiningClient } from '../src/core/client.js';
 import { MarketService } from '../src/core/market.js';
-import { leagueName, MinerWarsService } from '../src/core/minerwars.js';
+import { MinerWarsService } from '../src/core/minerwars.js';
 import { createServer } from '../src/mcp/server.js';
 import { createApp } from '../src/web/server.js';
 import { clanBoard, fakeFetch, income } from './fake-api.js';
@@ -20,11 +20,11 @@ import { clanBoard, fakeFetch, income } from './fake-api.js';
 const market = normalizeIncome(income);
 const tempFile = async (name) => join(await mkdtemp(join(tmpdir(), 'gomining-audit-')), name);
 
-test('league ids map to the names the app shows (3 is Eclipse, 4 is Horizon)', () => {
-  assert.equal(leagueName(1), 'Odyssey');
-  assert.equal(leagueName(3), 'Eclipse');
-  assert.equal(leagueName(4), 'Horizon');
-  assert.equal(leagueName(5), 'Dune I');
+test('league names come from GoMining\'s league list, Dune divisions numbered as GoMining numbers them', () => {
+  assert.equal(leagueDisplayName('odyssey'), 'Odyssey');
+  assert.equal(leagueDisplayName('eclipse'), 'Eclipse');
+  assert.equal(leagueDisplayName('dune-12'), 'Dune 12');
+  assert.equal(leagueDisplayName('dune-29'), 'Dune 29');
 });
 
 test('the league size is the number of clans on the board, not GoMining\'s count field', async () => {
@@ -37,7 +37,7 @@ test('the league size is the number of clans on the board, not GoMining\'s count
     },
   });
   const service = new MinerWarsService({ client: new GoMiningClient({ fetchImpl: api.fetchImpl }), now: () => Date.parse('2026-10-03T12:00:00Z') });
-  const data = await service.get();
+  const data = await service.board(3);
   assert.equal(data.league.clans, 6);
   assert.equal(data.league.name, 'Eclipse');
 });
@@ -47,24 +47,20 @@ test('Miner Wars fetches back off after a failure instead of retrying on every v
   let down = true;
   const api = fakeFetch({ 'POST /api/nft-game/clan-leaderboard/index-v2': (url, init) => (down ? new Response('down', { status: 502 }) : fakeFetch().fetchImpl(url, init)) });
   const service = new MinerWarsService({ client: new GoMiningClient({ fetchImpl: api.fetchImpl }), now: () => clock });
-  assert.equal((await service.get()).status, 'unavailable');
+  await assert.rejects(service.board(3), /HTTP 502/);
   const calls = api.calls.length;
   clock += 60_000;
-  assert.equal((await service.get()).status, 'unavailable');
+  await assert.rejects(service.board(3), /HTTP 502/);
   assert.equal(api.calls.length, calls, 'no new GoMining calls within the retry pause');
   down = false;
   clock += 10 * 60_000;
-  assert.equal((await service.get()).status, 'live');
-
-  // Members: a failed player-board scan isn't restarted on the next visit either.
-  const failing = fakeFetch({ 'POST /api/nft-game/user-leaderboard/index': () => new Response('slow down', { status: 429 }) });
-  const members = new MinerWarsService({ client: new GoMiningClient({ fetchImpl: failing.fetchImpl }), now: () => clock });
-  const first = await members.get({ waitForMembers: true });
-  assert.equal(first.members.status, 'unavailable');
-  const playerCalls = () => failing.calls.filter((c) => c.url.includes('user-leaderboard')).length;
-  const before = playerCalls();
-  await members.get({ waitForMembers: true });
-  assert.equal(playerCalls(), before);
+  assert.equal((await service.board(3)).clans.length, 6);
+  // A later failure serves the last good board, marked stale.
+  down = true;
+  clock += 11 * 60_000;
+  const stale = await service.board(3);
+  assert.equal(stale.stale, true);
+  assert.equal(stale.clans.length, 6);
 });
 
 test('Miner Wars net follows GoMining: a full week of maintenance, never below zero', () => {
@@ -83,10 +79,14 @@ test('Miner Wars net follows GoMining: a full week of maintenance, never below z
   const big = minerWarsVsSolo(market, { powerTh: 150, efficiencyWth: 15, clanBlocksWeek: 100, btcPerBlock: 0.001, clanPowerTh: 15000, leagueEfficiencyWth: 20, leagueDiscountPct: 0 });
   assert.equal(big.minerWars.netBtc, 0.00025625);
 
-  // Someone not in the clan yet adds their TH to the total instead of taking all of it.
+  // Someone not in the clan yet adds their TH to the total instead of taking all of it, and loses
+  // the joining day's Mining mode reward (one day of their weekly plain-mining net).
   const whale = minerWarsVsSolo(market, { powerTh: 20000, efficiencyWth: 15, clanBlocksWeek: 89, btcPerBlock: 0.0003, clanPowerTh: 15625.3, joining: true });
   assert.equal(whale.sharePct, 56.1399);
   assert.equal(whale.clanPowerTh, 35625.3);
+  assert.equal(whale.minerWars.switchCostBtc, Number((whale.solo.netBtc / 7).toFixed(8)));
+  assert.equal(whale.minerWars.firstWeekNetBtc, Number((whale.minerWars.netBtc - whale.minerWars.switchCostBtc).toFixed(8)));
+  assert.equal(big.minerWars.switchCostBtc, 0);
 });
 
 test('rough clan net: projected gross less a week of maintenance at the league average', () => {
@@ -103,19 +103,38 @@ test('halving is counted at 10-minute blocks', () => {
   assert.equal(h.estimatedDate.slice(0, 10), '2028-04-12');
 });
 
-test('discount: Service Button builds 0.3% a day, Mining mode adds 1.2%, 30.2% at most', () => {
+test('discount: Service Button builds 0.3% a day; Mining mode is only what the member enters, never assumed', () => {
   const base = { powerTh: 16, efficiencyWth: 15, gominingUsd: 0.5 };
   assert.equal(maintenanceDiscount(market, { ...base, serviceButtonDays: 4 }).serviceButtonPct, 1.2);
   assert.equal(maintenanceDiscount(market, { ...base, serviceButtonDays: 25 }).serviceButtonPct, 3);
   assert.equal(maintenanceDiscount(market, { ...base, serviceButton: true }).serviceButtonPct, 3);
-  const max = maintenanceDiscount(market, { ...base, gominingHeld: 1e6, vipLevel: 'Elite', serviceButtonDays: 10, miningMode: true });
-  assert.equal(max.miningModePct, 1.2);
-  assert.equal(max.totalPct, 30.2);
+  const fixed = maintenanceDiscount(market, { ...base, gominingHeld: 1e6, vipLevel: 'Elite', serviceButtonDays: 10 });
+  assert.equal(fixed.miningModePct, 0);
+  assert.equal(fixed.totalPct, 29);
+  const withMode = maintenanceDiscount(market, { ...base, gominingHeld: 1e6, vipLevel: 'Elite V', serviceButtonDays: 10, miningModePct: 1.75 });
+  assert.equal(withMode.vipPct, 6, 'GoMining\'s table name "Elite V" is accepted');
+  assert.equal(withMode.totalPct, 30.75);
 });
 
 test('the investment plan refuses a reinvest price that is really a per-W/TH step', () => {
   assert.throws(() => investmentPlan(market, { efficiencyWth: 15, monthlyUsd: 100, months: 24, pricePerThUsd: 14.99, reinvest: true, reinvestPricePerThUsd: 0.772 }), /far below/);
   assert.ok(investmentPlan(market, { efficiencyWth: 15, monthlyUsd: 100, months: 24, pricePerThUsd: 14.99, reinvest: true, reinvestPricePerThUsd: 11.5 }).summary.finalTh < 300);
+});
+
+test('reinvesting follows GoMining\'s rules: 10-5,000 TH, better than 20 W/TH, $0.10 a day', () => {
+  // 5 TH earns 5 x 0.0131 = $0.0655 a day: under the minimum and under 10 TH, so paid in BTC.
+  const small = investmentPlan(market, { startTh: 5, efficiencyWth: 15, months: 2, pricePerThUsd: 15, reinvest: true });
+  assert.equal(small.summary.reinvestedUsd, 0);
+  assert.ok(small.summary.reinvestBlockedDays['needs at least 10 TH'] > 0);
+  assert.equal(small.summary.finalTh, 5);
+  // 20 W/TH miners can't reinvest into TH at all.
+  const hot = investmentPlan(market, { startTh: 100, efficiencyWth: 20, months: 1, pricePerThUsd: 10, reinvest: true });
+  assert.equal(hot.summary.reinvestedUsd, 0);
+  assert.ok(hot.summary.reinvestBlockedDays['needs better than 20 W/TH'] > 0);
+  // 20 TH at 15 W/TH qualifies: rewards compound daily.
+  const ok = investmentPlan(market, { startTh: 20, efficiencyWth: 15, months: 12, pricePerThUsd: 15, reinvest: true, reinvestBonusPct: 5 });
+  assert.deepEqual(ok.summary.reinvestBlockedDays, {});
+  assert.ok(ok.summary.finalTh > 20 + ok.summary.reinvestedUsd / 15, 'the VIP bonus adds TH');
 });
 
 test('the client refuses encoded dot segments and backslashes', () => {

@@ -9,7 +9,8 @@ import { VIP_LEVELS, breakEvenBtcPrice, simpleEarn, vipStatus, difficultyImpact,
 import { GoMiningClient } from '../src/core/client.js';
 import { ExternalService } from '../src/core/external.js';
 import { MarketService } from '../src/core/market.js';
-import { leagueName, MinerWarsService } from '../src/core/minerwars.js';
+import { MinerWarsService } from '../src/core/minerwars.js';
+import { PlatformService } from '../src/core/platform.js';
 import { createServer } from '../src/mcp/server.js';
 import { createApp } from '../src/web/server.js';
 import { fakeFetch, income } from './fake-api.js';
@@ -83,9 +84,6 @@ test('Miner Wars cycles run Tuesday to Tuesday UTC', () => {
   assert.equal(c.start, '2026-09-29T00:00:00.000Z');
   assert.equal(c.end, '2026-10-06T00:00:00.000Z');
   assert.equal(c.elapsedDays, 4.5);
-  assert.equal(leagueName(3), 'Eclipse');
-  assert.equal(leagueName(4), 'Horizon');
-  assert.equal(leagueName(5), 'Dune I');
 });
 
 test('Miner Wars vs plain mining for a week', () => {
@@ -105,43 +103,72 @@ async function minerWarsService(routes) {
   return { service, api, client };
 }
 
-test('Miner Wars service finds HONKSQUAD, its zone and estimated BTC, and never sends the token', async () => {
+test('Miner Wars leagues come from GoMining\'s list as of the cycle start, with the published odds', async () => {
   const { service, api } = await minerWarsService();
-  const data = await service.get({ waitForMembers: true });
-  assert.equal(data.status, 'live');
-  assert.equal(data.league.id, 3);
+  const { cycle, leagues } = await service.leagues();
+  assert.equal(cycle.number, 163);
+  assert.deepEqual(leagues.map((l) => l.name), ['Odyssey', 'Eclipse', 'Dune 1'], 'test leagues are left out, top league first');
+  const eclipse = leagues.find((l) => l.id === 3);
+  assert.equal(eclipse.maxMultiplier, 4);
+  assert.equal(eclipse.averageMultiplier, 1.6); // 0.6 x 1 + 0.3 x 2 + 0.1 x 4
+  const body = api.calls.find((c) => c.url.endsWith('/league/index')).body;
+  assert.equal(body.calculatedAt, '2026-09-29T00:00:00.000Z');
+});
+
+test('any league\'s board: zones, BTC per block, projections, and the token is never sent', async () => {
+  const { service, api } = await minerWarsService();
+  const data = await service.board(3);
   assert.equal(data.league.name, 'Eclipse');
   assert.equal(data.league.btcPerBlock, 0.001);
   assert.equal(data.league.promotedUpTo, 2);
   assert.equal(data.league.relegatedFrom, 5);
-  assert.deepEqual([data.clan.position, data.clan.zone, data.clan.blocks], [2, 'promotion', 100]);
-  assert.equal(data.clan.btcSoFar, 0.1);
-  assert.equal(data.clan.blocksWeekProjected, 156); // 100 blocks in 4.5 days
-  assert.equal(data.neighbours.length, 4);
-  // 120 players, every third one in HONKSQUAD, read 50 at a time
-  assert.equal(data.members.count, 40);
-  assert.equal(data.members.rows[0].alias, 'p0');
-  assert.equal(data.members.rows[0].boostsUsed, 5);
+  assert.equal(data.league.avgEfficiencyWth, 17.9);
+  assert.equal(data.league.avgDiscountPct, 6.39);
+  assert.equal(data.league.blocksWeekProjected, 622); // 400 blocks in 4.5 days
+  const clan = data.clans.find((c) => c.name === 'Goose Squad');
+  assert.deepEqual([clan.position, clan.zone, clan.blocks, clan.btcSoFar, clan.blocksWeekProjected], [2, 'promotion', 100, 0.1, 156]);
   assert.ok(api.calls.every((c) => c.headers.authorization === undefined));
   assert.ok(api.calls.every((c) => !c.body?.pagination || c.body.pagination.limit <= 50));
+  await assert.rejects(service.board(42), /no Miner Wars league 42/);
 });
 
-test('Miner Wars service returns "loading" members first, then serves cached data', async () => {
-  const { service, api } = await minerWarsService();
-  const first = await service.get();
-  assert.equal(first.members.status, 'loading');
-  await service.membersInflight;
-  const calls = api.calls.length;
-  const second = await service.get();
-  assert.equal(second.members.status, 'live');
-  assert.equal(api.calls.length, calls);
+test('clans are found by name across every league', async () => {
+  const { service } = await minerWarsService();
+  const found = await service.search('goose');
+  assert.equal(found.count, 1);
+  assert.equal(found.clans[0].leagueName, 'Eclipse');
+  assert.equal(found.clans[0].position, 2);
+  assert.equal((await service.search('nobody here')).count, 0);
+  await assert.rejects(service.search('g'), /at least 2/);
 });
 
-test('Miner Wars service reports unavailable when GoMining is down', async () => {
+test('a Miner Wars board reports GoMining being down', async () => {
   const { service } = await minerWarsService({ 'POST /api/nft-game/clan-leaderboard/index-v2': () => new Response('down', { status: 502 }) });
-  const data = await service.get();
-  assert.equal(data.status, 'unavailable');
-  assert.match(data.error, /HTTP 502/);
+  await assert.rejects(service.board(3), /HTTP 502/);
+});
+
+test('platform statistics, Burn & Mint and spells from GoMining\'s public endpoints', async () => {
+  const api = fakeFetch();
+  const platform = new PlatformService({ client: new GoMiningClient({ token: 'secret', fetchImpl: api.fetchImpl }), now: () => Date.parse('2026-10-03T12:00:00Z') });
+  const p = await platform.platform();
+  assert.equal(p.users.mining, 3685674);
+  assert.equal(p.hashrateTh, 17377667);
+  assert.equal(p.btcPaid.minerWars, 862.52);
+  assert.equal(p.ve.yearlyIncomePerVote, 0.23);
+  assert.equal(p.ve.votes, 183316940);
+  const t = await platform.tokenomics();
+  assert.deepEqual(t.weeks.map((w) => w.date), ['2026-08-04', '2026-09-22', '2026-09-29'], 'sorted by date');
+  assert.equal(t.latest.burned, 4000000);
+  assert.equal(t.latest.netBurned, 96000);
+  assert.equal(t.latest.burnVotePct, 20); // (1 - 0.976) / (1 - 0.88)
+  assert.equal(t.latest.toVeHolders, 780800);
+  assert.equal(t.epoch.number, 8);
+  assert.equal(t.epoch.burned, 9000000, 'only epoch-8 cycles since its start');
+  assert.equal(t.epoch.progressPct, 10);
+  assert.equal(t.epoch.cyclesLeft, 18);
+  const s = await platform.spells();
+  assert.deepEqual(s.spells.map((x) => x.name), ['Boost X1', 'Boost X10'], 'expired spells are dropped');
+  assert.ok(api.calls.every((c) => c.headers.authorization === undefined));
 });
 
 test('Fear & Greed from alternative.me, and outlook in the market summary', async () => {
@@ -150,7 +177,9 @@ test('Fear & Greed from alternative.me, and outlook in the market summary', asyn
   assert.deepEqual(await external.sentiment(), { value: 62, label: 'Greed', yesterday: 58, lastWeek: 47 });
   const client = new GoMiningClient({ fetchImpl: api.fetchImpl });
   const service = new MarketService({ client, external, historyPath: join(await mkdtemp(join(tmpdir(), 'gomining-outlook-')), 'h.json') });
-  const app = createApp({ market: service, minerWars: new MinerWarsService({ client }) });
+  const minerWars = new MinerWarsService({ client, now: () => Date.parse('2026-10-03T12:00:00Z') });
+  const platform = new PlatformService({ client });
+  const app = createApp({ market: service, minerWars, platform, external });
   const { createServer: http } = await import('node:http');
   const server = http(app).listen(0);
   try {
@@ -161,55 +190,101 @@ test('Fear & Greed from alternative.me, and outlook in the market summary', asyn
     assert.equal(m.outlook.halving.nextHalvingHeight, 1050000);
     assert.equal(m.outlook.difficulty.difficultyChangePct, 1.8);
     assert.equal(m.outlook.breakEven.rows.length, 9);
-    const mw = await (await fetch(`${base}/api/minerwars`)).json();
-    assert.equal(mw.status, 'live');
-    assert.equal(mw.clan.name, 'HONKSQUAD');
+    assert.equal((await (await fetch(`${base}/api/minerwars/leagues`)).json()).leagues.length, 3);
+    const board = await (await fetch(`${base}/api/minerwars/board?league=3`)).json();
+    assert.equal(board.clans.length, 6);
+    assert.equal((await fetch(`${base}/api/minerwars/board?league=abc`)).status, 400);
+    assert.equal((await fetch(`${base}/api/minerwars/board?league=42`)).status, 404);
+    assert.equal((await (await fetch(`${base}/api/minerwars/search?q=goose`)).json()).count, 1);
+    assert.equal((await fetch(`${base}/api/minerwars/search?q=g`)).status, 400);
+    assert.equal((await (await fetch(`${base}/api/minerwars/spells`)).json()).spells.length, 2);
+    assert.equal((await (await fetch(`${base}/api/platform`)).json()).users.mining, 3685674);
+    assert.equal((await (await fetch(`${base}/api/tokenomics`)).json()).epoch.number, 8);
+    const prices = await (await fetch(`${base}/api/prices/history`)).json();
+    assert.equal(prices.btc.length, 10);
+    assert.equal(prices.gomining.length, 10);
+    assert.equal((await fetch(`${base}/api/minerwars`)).status, 404, 'the old clan-only route is gone');
   } finally {
     server.close();
   }
 });
 
-test('MCP: clan Miner Wars, outlook and discount tools', async () => {
+test('MCP: Miner Wars, planner, tokenomics, outlook and discount tools', async () => {
   const api = fakeFetch();
   const client = new GoMiningClient({ fetchImpl: api.fetchImpl });
   const market = new MarketService({ client, external: new ExternalService({ fetchImpl: api.fetchImpl }), historyPath: join(await mkdtemp(join(tmpdir(), 'gomining-mw-')), 'h.json') });
-  const server = createServer({ client, market, minerWars: new MinerWarsService({ client }) });
+  const now = () => Date.parse('2026-10-03T12:00:00Z');
+  const server = createServer({ client, market, minerWars: new MinerWarsService({ client, now }), platform: new PlatformService({ client, now }) });
   const mcp = new Client({ name: 'test', version: '0.0.0' });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(b), mcp.connect(a)]);
   const call = async (name, args = {}) => JSON.parse((await mcp.callTool({ name, arguments: args })).content[0].text);
-  const mw = await call('gomining_clan_miner_wars', { powerTh: 150 });
-  assert.equal(mw.clan.name, 'HONKSQUAD');
-  assert.equal(mw.members.count, 40);
-  assert.equal(mw.board, undefined);
-  assert.ok(mw.vsSolo.minerWars.netBtc > 0);
+  const leagues = await call('gomining_miner_wars_leagues');
+  assert.equal(leagues.leagues[1].name, 'Eclipse');
+  const byName = await call('gomining_miner_wars_board', { clan: 'Goose Squad', powerTh: 150 });
+  assert.equal(byName.clan.name, 'Goose Squad');
+  assert.equal(byName.league.name, 'Eclipse');
+  assert.ok(byName.vsSolo.minerWars.netBtc > 0);
+  assert.ok(byName.vsSolo.minerWars.switchCostBtc > 0, 'joining costs a day of Mining mode');
+  const byLeague = await call('gomining_miner_wars_board', { league: 'eclipse' });
+  assert.equal(byLeague.board.length, 6);
+  const finder = await call('gomining_clan_finder', { league: 3, powerTh: 500, efficiencyWth: 15 });
+  assert.equal(finder.pointsPerSecond, 666.6667);
+  assert.equal(finder.rows.length, 6);
+  assert.ok(finder.rows[0].netBtc >= finder.rows[1].netBtc);
+  const tokenomics = await call('gomining_tokenomics', { lockAmount: 1461, lockDays: 1461 });
+  assert.equal(tokenomics.lock.votes, 1461);
+  assert.equal(tokenomics.lock.vipLevel, 'Gold I');
+  const planner = await call('gomining_planner', { powerTh: 16, efficiencyWth: 15, budgetUsd: 100, capitalUsd: 1000, simpleEarnAprPct: 9.85 });
+  assert.equal(planner.matrix.rows.length, 9);
+  assert.equal(planner.upgrade.power.pricePerThUsd, 15.6244, 'defaults to GoMining\'s list price per TH at 15 W/TH');
+  assert.ok(planner.simpleEarnVsMining.simpleEarn.yearUsd > 0);
+  assert.equal((await call('gomining_platform_stats')).users.mining, 3685674);
+  assert.equal((await call('gomining_spells')).spells.length, 2);
   const outlook = await call('gomining_outlook', { powerTh: 16 });
   assert.equal(outlook.fearGreed.label, 'Greed');
   assert.equal(outlook.breakEven.rows[3].efficiencyWth, 15);
   const discount = await call('gomining_maintenance_discount', { powerTh: 16, efficiencyWth: 15, gominingHeld: 1e6, vipPct: 6, serviceButton: true });
   assert.equal(discount.totalPct, 29);
+  const vip = await mcp.callTool({ name: 'gomining_vip', arguments: { powerTh: 10, earnAsset: 'USDT', earnAmount: 100 } });
+  assert.equal(vip.isError, true, 'Simple Earn needs the APR from the wallet');
+  assert.match(vip.content[0].text, /earnAprPct is needed/);
 });
 
-test('VIP level from the best of three paths, and what the next level needs', () => {
+test('VIP level from the higher of TH and veGOMINING, with GoMining\'s published perks', () => {
   const s = vipStatus({ powerTh: 1200, veGomining: 3000 });
   assert.equal(s.level.name, 'Platinum II');
   assert.deepEqual(s.reachedBy, ['th']);
   assert.equal(s.byPath.veGomining, 'Gold II');
   assert.equal(s.next.level.name, 'Platinum III');
-  assert.deepEqual(s.next.needs, { th: 1300, veGomining: 22000, referralUsd: 250000 });
+  assert.deepEqual(s.next.needs, { th: 1300, veGomining: 22000 });
   assert.equal(s.next.gains.discountPct, 0.3);
-  assert.equal(vipStatus({ referralUsd: 600000 }).level.name, 'Diamond I');
+  assert.equal(s.level.instantFundsFeePct, 1.96);
+  assert.deepEqual(s.level.launchpad, { multiplier: 125, tier: 7 });
+  assert.equal(vipStatus({ veGomining: 50000 }).level.name, 'Diamond I');
   assert.equal(vipStatus({ powerTh: 2e6 }).next, null);
   assert.equal(vipStatus().level.name, 'Bronze I');
+  assert.equal(VIP_LEVELS.find((l) => l.name === 'Gold I').clanOwner, true);
+  assert.equal(VIP_LEVELS.find((l) => l.name === 'Silver III').clanOwner, false);
 });
 
-test('Simple Earn: base APR times the VIP multiplier, paid in BTC', () => {
+test('Simple Earn: the wallet\'s APR times the VIP multiplier, in BTC or in TH with 10% more', () => {
   const r = simpleEarn({ amount: 1000, assetPriceUsd: 1, aprPct: 12.02, vipLevel: 'Platinum II', btcPriceUsd: 80000 });
   assert.equal(r.multiplier, 1.22);
   assert.equal(r.effectiveAprPct, 14.664);
   assert.equal(r.periods.year.usd, 146.644);
   assert.equal(r.periods.year.sats, 183305);
+  assert.equal(r.rewardType, 'BTC');
   assert.throws(() => simpleEarn({ amount: 1, aprPct: 1, btcPriceUsd: 1 }), /price/);
+  assert.throws(() => simpleEarn({ amount: 1, assetPriceUsd: 1, btcPriceUsd: 1 }), /APR/);
+  // $10,000 at 14.664%: $0.67 per 4-hour cycle, enough for TH; 10% more TH at $15 per TH.
+  const th = simpleEarn({ amount: 10000, assetPriceUsd: 1, aprPct: 12.02, vipLevel: 'Platinum II', btcPriceUsd: 80000, rewardInTh: true, thPriceUsd: 15 });
+  assert.equal(th.rewardType, 'TH');
+  assert.equal(th.periods.year.th, 107.5389); // 10,000 x 12.02% x 1.22 x 1.1 / 15
+  // $1,000 earns $0.067 a cycle: under the $0.10 minimum, so it stays in BTC.
+  const tiny = simpleEarn({ amount: 1000, assetPriceUsd: 1, aprPct: 12.02, vipLevel: 'Platinum II', btcPriceUsd: 80000, rewardInTh: true, thPriceUsd: 15 });
+  assert.equal(tiny.rewardType, 'BTC');
+  assert.match(tiny.thNote, /minimum/);
 });
 
 test('maintenance discount still counts VIP and Service Button without a GOMINING price', () => {

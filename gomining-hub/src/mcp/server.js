@@ -1,6 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { HALVING_NOTE, MAX_DISCOUNT_PCT, SIMPLE_EARN_ASSETS, SIMPLE_EARN_RATES_CHECKED, VIP_LEVELS, minerWarsClanNet, breakEvenBtcPrice, simpleEarn, vipStatus, calculateEarnings, dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, maintenanceDiscount, minerRoi, minerWarsVsSolo, payoutVsAverage, upgradeAdvisor } from '../core/calc.js';
+import {
+  FIXED_MAX_DISCOUNT_PCT, HALVING_NOTE, SIMPLE_EARN_ASSETS, VE_MAX_LOCK_DAYS, VIP_LEVELS, breakEvenBtcPrice, breakEvenMatrix, calculateEarnings, clanFinder,
+  dailyBreakdownPerTh, difficultyImpact, efficiencyCurve, findListedPrice, halving, hashprice, listedPricePerTh, maintenanceDiscount, minerRoi, minerWarsVsSolo,
+  payoutVsAverage, pointsPerSecond, simpleEarn, simpleEarnVsMining, upgradeAdvisor, upgradeComparison, veLock, vipStatus,
+} from '../core/calc.js';
 import { GoMiningError } from '../core/client.js';
 
 const MAX_RESPONSE_CHARS = 60_000;
@@ -34,7 +38,11 @@ const provenance = (market, part) => ({
 
 // `remote`: the server behind the public /mcp/<key> URL. It gets the public tools only, never the raw
 // GoMining API passthrough (GoMining uses POST for actions too, so a leaked URL must not reach it).
-export function createServer({ client, market, minerWars, allowWrites = false, remote = false }) {
+// Personal account data (balances, miners, real discounts, Simple Earn APRs) lives behind GoMining's
+// own login; GoMining's official MCP connector serves it, so this server points there.
+const OFFICIAL_MCP = 'https://mcp.gomining.com/mcp';
+
+export function createServer({ client, market, minerWars, platform, allowWrites = false, remote = false }) {
   const server = new McpServer({ name: 'gomining-hub', version: '0.1.0' });
   const readOnly = { readOnlyHint: true, openWorldHint: true };
   const marketData = () => market.get();
@@ -150,7 +158,7 @@ export function createServer({ client, market, minerWars, allowWrites = false, r
 
   server.registerTool('gomining_maintenance_discount', {
     title: 'Maintenance discount builder',
-    description: `GoMining maintenance discount from its parts, ${MAX_DISCOUNT_PCT}% at most: paying in GOMINING (1% per 18 days of maintenance your GOMINING balance covers, max 20%), VIP level (0% Bronze I to 6% Elite; pass vipLevel), the Service Button (+0.3% per day pressed in a row, max 3% after 10 days) and Mining mode (about 1.2%, derived from GoMining's 30.2% maximum; not for Miner Wars). Also how much GOMINING is needed for the next step and for the full 20%.`,
+    description: `GoMining maintenance discount from its parts (docs.gomining.com): paying in GOMINING (1% per 18 days of maintenance your GOMINING wallet plus locked balance covers, max 20%), VIP level (0% Bronze I to 6% Elite; pass vipLevel) and the Service Button (+0.3% per day pressed in a row, max 3% after 10 days), ${FIXED_MAX_DISCOUNT_PCT}% together at most. Mining mode adds its own discount, which changes every week with the Burn & Mint vote and is only shown in the member's app: pass miningModePct from there (it is never assumed). Also how much GOMINING is needed for the next step and for the full 20%.`,
     inputSchema: {
       powerTh: z.number().positive().describe('Total TH of the miners'),
       efficiencyWth: z.number().positive().describe('Average W/TH'),
@@ -159,7 +167,7 @@ export function createServer({ client, market, minerWars, allowWrites = false, r
       vipPct: z.number().min(0).max(6).optional().describe('VIP discount % instead of a level'),
       serviceButton: z.boolean().optional().describe('Service Button pressed 10 days in a row (3%)'),
       serviceButtonDays: z.number().int().min(0).max(10).optional().describe('Days in a row the Service Button was pressed (0.3% each, max 10)'),
-      miningMode: z.boolean().optional().describe('In Mining mode (about +1.2%)'),
+      miningModePct: z.number().min(0).max(100).optional().describe('Mining mode discount % exactly as the member\'s GoMining app shows it this week (0 in Miner Wars or during the trial)'),
     },
     annotations: readOnly,
   }, tool(async (args) => {
@@ -174,57 +182,177 @@ export function createServer({ client, market, minerWars, allowWrites = false, r
 
   server.registerTool('gomining_vip', {
     title: 'VIP level and Simple Earn',
-    description: 'GoMining VIP level from any one of three paths (mining power TH, locked veGOMINING, referral activity in USD over 180 days), its perks (maintenance discount, Simple Earn multiplier, reinvest bonus, referral royalty) and what the next level needs. Optionally estimates Simple Earn BTC rewards for an amount of BTC, USDT, USDC or BNB.',
+    description: `GoMining VIP level (official table, gomining.com/vip) from mining power TH or locked veGOMINING votes, whichever is higher, with its perks (maintenance discount, Simple Earn multiplier, Instant Funds fee, Launchpad allocation, reinvest bonus, referral royalty) and what the next level needs. Referral activity is a third path whose thresholds only the app shows. Optionally estimates Simple Earn rewards: Simple Earn APRs change often and only the member's wallet shows them, so earnAprPct must come from there. For the member's real VIP level and Simple Earn rates, GoMining's official MCP connector (${OFFICIAL_MCP}) reads them from their account.`,
     inputSchema: {
       powerTh: z.number().min(0).optional().describe('Own mining power in TH'),
-      veGomining: z.number().min(0).optional().describe('Locked veGOMINING'),
-      referralUsd: z.number().min(0).optional().describe('Referral activity over the last 180 days, USD'),
-      earnAsset: z.enum(Object.keys(SIMPLE_EARN_ASSETS)).optional().describe('Simple Earn asset'),
+      veGomining: z.number().min(0).optional().describe('veGOMINING votes'),
+      earnAsset: z.enum(SIMPLE_EARN_ASSETS).optional().describe('Simple Earn asset'),
       earnAmount: z.number().positive().optional().describe('Amount of that asset in Simple Earn'),
-      earnAprPct: z.number().min(0).optional().describe(`Base APR % (defaults to GoMining's published rate as checked ${SIMPLE_EARN_RATES_CHECKED}; check the app)`),
-      earnAssetPriceUsd: z.number().positive().optional().describe('Asset price in USD (needed for BNB)'),
+      earnAprPct: z.number().min(0).optional().describe('Base APR % for that asset, as the GoMining wallet shows it'),
+      earnAssetPriceUsd: z.number().positive().optional().describe('Asset price in USD (BTC and stablecoins are filled in)'),
+      rewardInTh: z.boolean().optional().describe('Simple Earn rewards paid in TH (+10% TH, only for cycles of $0.10 or more)'),
     },
     annotations: readOnly,
-  }, tool(async ({ powerTh, veGomining, referralUsd, earnAsset, earnAmount, earnAprPct, earnAssetPriceUsd }) => {
-    const status = vipStatus({ powerTh, veGomining, referralUsd });
+  }, tool(async ({ powerTh, veGomining, earnAsset, earnAmount, earnAprPct, earnAssetPriceUsd, rewardInTh }) => {
+    const status = vipStatus({ powerTh, veGomining });
     if (!earnAsset || !earnAmount) return { ...status, levels: VIP_LEVELS };
+    if (earnAprPct === undefined) throw new Error('earnAprPct is needed: Simple Earn APRs change often and only the GoMining wallet shows the current one');
     const data = await market.get();
     const btcPriceUsd = data.prices?.btc?.usd ?? data.income.btcPriceUsd;
-    const assetPriceUsd = earnAssetPriceUsd ?? (earnAsset === 'BTC' ? btcPriceUsd : earnAsset === 'BNB' ? undefined : 1);
-    return { ...status, simpleEarn: simpleEarn({ amount: earnAmount, assetPriceUsd, aprPct: earnAprPct ?? SIMPLE_EARN_ASSETS[earnAsset], vipLevel: status.level.name, btcPriceUsd }) };
+    const assetPriceUsd = earnAssetPriceUsd ?? (earnAsset === 'BTC' ? btcPriceUsd : ['USDT', 'USDC'].includes(earnAsset) ? 1 : undefined);
+    if (!assetPriceUsd) throw new Error(`earnAssetPriceUsd is needed for ${earnAsset}`);
+    return { ...status, simpleEarn: simpleEarn({ amount: earnAmount, assetPriceUsd, aprPct: earnAprPct, vipLevel: status.level.name, btcPriceUsd, rewardInTh }) };
   }));
 
-  server.registerTool('gomining_clan_miner_wars', {
-    title: 'HONKSQUAD in Miner Wars',
-    description: 'HONKSQUAD\'s live Miner Wars standing in the current cycle from GoMining\'s public leaderboards: league, rank, zone (promotion, safe, relegation), blocks won, TH, the league prize fund and average BTC per block, the clan\'s estimated BTC this cycle (gross, before maintenance) with a rough net, neighbouring clans, and the players who mined for the clan this cycle. Optionally compares a week of Miner Wars with plain mining for a member\'s power using GoMining\'s rule: a full week of maintenance on the member\'s TH comes out of the reward, never below zero.',
+  const needsMinerWars = () => {
+    if (!minerWars) throw new Error('Miner Wars data is not configured on this server');
+    return minerWars;
+  };
+  const leagueRef = z.union([z.number().int().positive(), z.string().min(2)]).describe('League id (1 Odyssey, 3 Eclipse, 4 Horizon, 5+ Dune divisions) or name, e.g. "Eclipse" or "Dune 12"');
+  const resolveLeague = async (ref) => {
+    const { leagues } = await needsMinerWars().leagues();
+    const league = typeof ref === 'number' ? leagues.find((row) => row.id === ref) : leagues.find((row) => row.name.toLowerCase() === String(ref).trim().toLowerCase().replace(/-/g, ' '));
+    if (!league) throw new Error(`No league ${JSON.stringify(ref)} this cycle. Leagues: ${leagues.map((row) => row.name).join(', ')}`);
+    return league;
+  };
+
+  server.registerTool('gomining_miner_wars_leagues', {
+    title: 'Miner Wars leagues',
+    description: 'Every Miner Wars league this cycle (Odyssey, Eclipse, Horizon and the Dune divisions) from GoMining\'s public data: clan slots, promotion and relegation targets, and GoMining\'s published odds of each round multiplier with the resulting average multiplier. Also the cycle number and dates (Tuesday to Tuesday UTC).',
+    annotations: readOnly,
+  }, tool(async () => needsMinerWars().leagues()));
+
+  server.registerTool('gomining_miner_wars_board', {
+    title: 'Miner Wars clan board',
+    description: 'A Miner Wars league\'s live clan board from GoMining\'s public leaderboard: every clan\'s position, zone, blocks won, TH and estimated BTC so far (gross, before maintenance), plus the league\'s prize fund, BTC per block and weighted average W/TH and discount. Give a league, or a clan name to find it in any league. With powerTh, also compares a week in that clan with plain mining using GoMining\'s rules (a full week of maintenance on all your TH comes out of your share, never below zero; reward beyond Mining mode is charged at the league averages; the joining day earns no Mining mode reward).',
     inputSchema: {
-      powerTh: z.number().positive().optional().describe('A member\'s TH, to compare Miner Wars with plain mining'),
-      efficiencyWth: z.number().positive().optional().describe('That member\'s W/TH (default 15)'),
-      discountPct: z.number().min(0).max(100).optional().describe('That member\'s maintenance discount %'),
-      joining: z.boolean().optional().describe('The member is not in HONKSQUAD yet (their TH is added to the clan total)'),
-      includeBoard: z.boolean().optional().describe('Include the whole league board'),
+      league: leagueRef.optional(),
+      clan: z.string().min(2).optional().describe('Clan name (or part of it) to look up across all leagues'),
+      powerTh: z.number().positive().optional().describe('Your TH, to compare a week in the clan with plain mining'),
+      efficiencyWth: z.number().positive().optional().describe('Your W/TH (default 15)'),
+      discountPct: z.number().min(0).max(100).optional().describe('Your maintenance discount %'),
+      member: z.boolean().optional().describe('You are already in the clan (your TH is part of its total)'),
+      includeBoard: z.boolean().optional().describe('Include every clan on the board'),
     },
     annotations: readOnly,
-  }, tool(async ({ powerTh, efficiencyWth = 15, discountPct = 0, joining = false, includeBoard = false }) => {
-    if (!minerWars) throw new Error('Miner Wars data is not configured on this server');
-    const data = await minerWars.get({ waitForMembers: true });
-    if (data.status !== 'live') return data;
-    const { board, ...rest } = data;
-    const income = (await marketData()).income;
-    const clanNet = minerWarsClanNet(income, { btcWeek: data.clan.btcWeekProjected ?? data.clan.btcSoFar, clanPowerTh: data.clan.powerTh, leagueEfficiencyWth: data.league.avgEfficiencyWth, leagueDiscountPct: data.league.avgDiscountPct ?? 0 });
-    let comparison;
-    if (powerTh) {
-      comparison = minerWarsVsSolo(income, {
-        powerTh, efficiencyWth, discountPct, joining, clanBlocksWeek: data.clan.blocksWeekProjected ?? data.clan.blocks, btcPerBlock: data.league.btcPerBlock,
-        clanPowerTh: data.clan.powerTh, leagueEfficiencyWth: data.league.avgEfficiencyWth, leagueDiscountPct: data.league.avgDiscountPct ?? undefined,
-      });
+  }, tool(async ({ league, clan, powerTh, efficiencyWth = 15, discountPct = 0, member = false, includeBoard = false }) => {
+    if (!league && !clan) throw new Error('Give a league or a clan name');
+    let target = null;
+    let leagueId;
+    if (clan) {
+      const found = await needsMinerWars().search(clan, { limit: 10 });
+      if (!found.count) return { ...found, note: 'No clan with that name on any league board this cycle' };
+      target = found.clans[0];
+      leagueId = target.leagueId;
+      if (!powerTh && !includeBoard) return found;
+    } else {
+      leagueId = (await resolveLeague(league)).id;
     }
+    const board = await needsMinerWars().board(leagueId);
+    const row = target ? board.clans.find((c) => c.clanId === target.clanId) ?? target : null;
+    const income = (await marketData()).income;
+    // Joining adds your own fair chance on top of the clan's pace: the league's weekly blocks x your share of league power.
+    const lg = board.league;
+    const extra = member || !(lg.totalPowerTh > 0) || !powerTh ? 0 : (lg.blocksWeekProjected ?? 0) * (powerTh / (lg.totalPowerTh + powerTh));
+    const vs = row && powerTh ? minerWarsVsSolo(income, {
+      powerTh, efficiencyWth, discountPct, joining: !member, clanBlocksWeek: (row.blocksWeekProjected ?? row.blocks) + extra, btcPerBlock: board.league.btcPerBlock,
+      clanPowerTh: row.powerTh, leagueEfficiencyWth: board.league.avgEfficiencyWth, leagueDiscountPct: board.league.avgDiscountPct ?? undefined,
+    }) : null;
     return {
-      ...rest,
-      ...(clanNet ? { clanWeekEstimate: { ...clanNet, note: 'Projected gross less a week of maintenance on the clan\'s TH at the league-average W/TH and discount (the clan\'s own average is not public). Each member\'s share is floored at zero separately.' } } : {}),
-      ...(includeBoard ? { board } : {}),
-      ...(comparison ? { vsSolo: comparison } : {}),
+      cycle: board.cycle,
+      league: board.league,
+      ...(row ? { clan: row } : {}),
+      ...(vs ? { vsSolo: vs } : {}),
+      ...(includeBoard || !row ? { board: board.clans } : { top: board.clans.slice(0, 10) }),
+      ...(board.stale ? { stale: true, asOf: board.asOf } : {}),
     };
+  }));
+
+  server.registerTool('gomining_clan_finder', {
+    title: 'Best Miner Wars clan for your miners',
+    description: 'Ranks every clan on a league board by what a week in it would pay you, at each clan\'s pace so far this cycle and GoMining\'s maintenance rules (full week of maintenance on all your TH, never below zero, beyond-Mining-mode reward at the league averages, one day of Mining mode lost when joining). Your TH is added to each clan; blocks are assumed to grow with the clan\'s share of league power. Also your points per second (TH x 20 / W/TH). An estimate: multipliers, spells and other players change the outcome.',
+    inputSchema: {
+      league: leagueRef,
+      powerTh: z.number().positive().describe('Your TH'),
+      efficiencyWth: z.number().positive().describe('Your W/TH'),
+      discountPct: z.number().min(0).max(100).optional().describe('Your maintenance discount %'),
+      limit: z.number().int().min(1).max(50).optional().describe('How many clans to return (default 15)'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ league, powerTh, efficiencyWth, discountPct = 0, limit = 15 }) => {
+    const board = await needsMinerWars().board((await resolveLeague(league)).id);
+    const income = (await marketData()).income;
+    const result = clanFinder(income, { board: board.clans, league: board.league, elapsedDays: board.cycle.elapsedDays, powerTh, efficiencyWth, discountPct, limit });
+    return { cycle: board.cycle, league: board.league.name, pointsPerSecond: pointsPerSecond(powerTh, efficiencyWth), ...result };
+  }));
+
+  server.registerTool('gomining_spells', {
+    title: 'Miner Wars spells and prices',
+    description: 'Miner Wars spells and power-ups on sale now (GoMining\'s public list): type, tier, GOMINING price and effect values. 97.5% of GOMINING spent on spells goes to the personal-battle prize pool.',
+    annotations: readOnly,
+  }, tool(async () => {
+    if (!platform) throw new Error('Platform data is not configured on this server');
+    return platform.spells();
+  }));
+
+  server.registerTool('gomining_platform_stats', {
+    title: 'GoMining platform statistics',
+    description: 'GoMining\'s public platform counters: users mining, total hashrate, Simple Earn users, cards, miners, upgrades, holders, secondary-market volume, BTC paid out (all time, and in Miner Wars), GOMINING locked, veGOMINING totals and income per vote, with GoMining\'s own one-day changes.',
+    annotations: readOnly,
+  }, tool(async () => {
+    if (!platform) throw new Error('Platform data is not configured on this server');
+    return platform.platform();
+  }));
+
+  server.registerTool('gomining_tokenomics', {
+    title: 'GOMINING Burn & Mint and veGOMINING',
+    description: `GOMINING tokenomics from GoMining's public record: every weekly Burn & Mint cycle (GOMINING burned from maintenance paid in tokens, minted, net burned, the share of votes for burning read back from the mint formula, and what went to veGOMINING holders), the current epoch's progress, and veGOMINING totals with GoMining's yearly income per vote. With lockAmount, also simulates a lock: votes (amount x days / ${VE_MAX_LOCK_DAYS}, falling to zero at the end), the VIP level they give and for how long, and rewards at the current income per vote.`,
+    inputSchema: {
+      weeks: z.number().int().min(1).max(400).optional().describe('How many recent weekly cycles to include (default 12)'),
+      lockAmount: z.number().positive().optional().describe('GOMINING to lock, for the lock simulation'),
+      lockDays: z.number().int().min(7).max(VE_MAX_LOCK_DAYS).optional().describe(`Lock length in days, 7 to ${VE_MAX_LOCK_DAYS} (default ${VE_MAX_LOCK_DAYS}, 4 years)`),
+    },
+    annotations: readOnly,
+  }, tool(async ({ weeks = 12, lockAmount, lockDays = VE_MAX_LOCK_DAYS }) => {
+    if (!platform) throw new Error('Platform data is not configured on this server');
+    const data = await platform.tokenomics();
+    const gominingUsd = (await marketData()).prices?.gomining?.usd;
+    return {
+      latest: data.latest,
+      epoch: data.epoch,
+      totals: data.totals,
+      ve: data.ve,
+      weeks: data.weeks.slice(-weeks),
+      ...(lockAmount ? { lock: veLock({ amount: lockAmount, lockDays, yearlyIncomePerVote: data.ve?.yearlyIncomePerVote, gominingUsd }) } : {}),
+    };
+  }));
+
+  server.registerTool('gomining_planner', {
+    title: 'Mining planner',
+    description: 'Planning maths at today\'s GoMining payout and fees: (1) a break-even matrix of net reward per TH per day for each W/TH at several BTC prices; (2) with powerTh and budgetUsd, whether the budget earns more as efficiency upgrades (GoMining\'s per-step prices) or as more TH (at powerPricePerThUsd, default GoMining\'s new-miner list price per TH at that efficiency); (3) with capitalUsd and simpleEarnAprPct, the same money in Simple Earn versus new TH.',
+    inputSchema: {
+      btcPrices: z.array(z.number().positive()).max(12).optional().describe('BTC prices for the break-even matrix (default: today and ±25/50%)'),
+      discountPct: z.number().min(0).max(100).optional().describe('Total maintenance discount %'),
+      powerTh: z.number().positive().optional().describe('Your miner\'s TH, for the upgrade comparison'),
+      efficiencyWth: z.number().positive().optional().describe('Your miner\'s W/TH (default 15)'),
+      budgetUsd: z.number().positive().optional().describe('Budget to spend on upgrades'),
+      powerPricePerThUsd: z.number().positive().optional().describe('What adding a TH costs you (your app\'s power-upgrade price)'),
+      capitalUsd: z.number().positive().optional().describe('Amount for Simple Earn vs mining'),
+      simpleEarnAprPct: z.number().min(0).optional().describe('Simple Earn base APR % from your wallet'),
+      vipLevel: z.enum(VIP_LEVELS.map((row) => row.name)).optional().describe('VIP level for the Simple Earn multiplier'),
+    },
+    annotations: readOnly,
+  }, tool(async ({ btcPrices, discountPct = 0, powerTh, efficiencyWth = 15, budgetUsd, powerPricePerThUsd, capitalUsd, simpleEarnAprPct, vipLevel }) => {
+    const data = await market.get();
+    const btc = data.income.btcPriceUsd;
+    const listed = listedPricePerTh(data.presets, Math.round(efficiencyWth));
+    const result = { matrix: breakEvenMatrix(data.income, { btcPrices: btcPrices ?? [0.5, 0.75, 1, 1.25, 1.5, 2].map((k) => Math.round(btc * k)), discountPct }), ...provenance(data, 'income') };
+    if (powerTh && budgetUsd) result.upgrade = upgradeComparison(data.income, data.upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct, powerPricePerThUsd: powerPricePerThUsd ?? listed ?? undefined });
+    if (capitalUsd && simpleEarnAprPct !== undefined) {
+      if (!listed) throw new Error(`GoMining lists no new miners at ${Math.round(efficiencyWth)} W/TH to compare with`);
+      result.simpleEarnVsMining = simpleEarnVsMining(data.income, { capitalUsd, aprPct: simpleEarnAprPct, vipLevel, efficiencyWth, pricePerThUsd: listed, discountPct });
+    }
+    return result;
   }));
 
   server.registerTool('gomining_calculate_earnings', {
@@ -296,6 +424,7 @@ export function createServer({ client, market, minerWars, allowWrites = false, r
       tokenConfigured: client.hasToken,
       writesAllowed: allowWrites,
       accountTools: remote ? 'not available on the remote connector (public data only)' : 'gomining_api_request',
+      personalData: `For your own balances, miners, rewards, VIP level and Simple Earn rates, connect GoMining's official MCP: ${OFFICIAL_MCP}`,
       marketData: data.source,
       ...(data.source === 'sample' ? { liveErrors: data.errors, sampleCapturedAt: data.sampleCapturedAt } : {}),
     };

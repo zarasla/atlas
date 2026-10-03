@@ -258,11 +258,26 @@ export function listedPricePerTh(presets, efficiencyWth) {
   return rows.find((row) => row.powerTh === 1)?.priceUsdPerTh ?? Math.min(...rows.map((row) => row.priceUsdPerTh));
 }
 
-// Month-by-month simulation of buying hashrate at a fixed price per TH, at today's rates.
-// With `reinvest`, each month's net reward also buys TH. Returns monthly rows and a summary.
-// `reinvestPricePerThUsd` is what reinvested rewards pay per TH (e.g. GoMining's power-upgrade price,
-// defaults to pricePerThUsd) and `reinvestBonusPct` adds bonus TH on reinvestment (e.g. a VIP bonus).
-// GoMining's eligibility rules and minimums for reinvesting are not modelled.
+// GoMining's rules for reinvesting rewards into TH (docs: Rewards, Reward Reinvestment): the selected
+// miner must have 10 to 5,000 TH and better than 20 W/TH, and the day's reward must be at least
+// $0.10; otherwise the reward is paid in BTC. TH is bought at the power-upgrade price, with no fee.
+export const TH_REINVEST_RULES = { minTh: 10, maxTh: 5000, maxEfficiencyWth: 20, minUsdPerDay: 0.1 };
+
+// Why a miner can't reinvest into TH, or null when it can.
+export function thReinvestBlocker({ powerTh, efficiencyWth, netUsdDay }) {
+  if (!(efficiencyWth < TH_REINVEST_RULES.maxEfficiencyWth)) return `needs better than ${TH_REINVEST_RULES.maxEfficiencyWth} W/TH`;
+  if (powerTh < TH_REINVEST_RULES.minTh) return `needs at least ${TH_REINVEST_RULES.minTh} TH`;
+  if (powerTh >= TH_REINVEST_RULES.maxTh) return `the miner is at the ${grouped(TH_REINVEST_RULES.maxTh)} TH maximum`;
+  if (netUsdDay < TH_REINVEST_RULES.minUsdPerDay) return `the daily reward is under $${TH_REINVEST_RULES.minUsdPerDay.toFixed(2)}`;
+  return null;
+}
+const grouped = (value) => new Intl.NumberFormat('en-US').format(value);
+
+// Day-by-day simulation (GoMining pays and reinvests daily) of buying hashrate at a fixed price per
+// TH, at today's rates, reported month by month. `monthlyUsd` buys TH at the start of each month.
+// With `reinvest`, each day's net reward buys TH when GoMining's reinvestment rules allow it (all
+// the TH is treated as one miner) and is paid out in BTC when they don't. `reinvestPricePerThUsd` is
+// the power-upgrade price per TH (defaults to pricePerThUsd); `reinvestBonusPct` is the VIP bonus.
 export function investmentPlan(market, {
   startTh = 0, efficiencyWth, monthlyUsd = 0, months = 12, pricePerThUsd, reinvest = false, discountPct = 0,
   reinvestPricePerThUsd, reinvestBonusPct = 0, kwhPriceUsd, useAverageReward = false,
@@ -277,24 +292,36 @@ export function investmentPlan(market, {
   const span = Math.min(Math.max(Math.round(months), 1), 120);
   const reinvestPrice = reinvestPricePerThUsd > 0 ? reinvestPricePerThUsd : pricePerThUsd;
   const bonus = 1 + Math.min(Math.max(Number(reinvestBonusPct) || 0, 0), 100) / 100;
-  const perThMonth = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct, kwhPriceUsd, useAverageReward }).periods.month.netUsd;
+  const perThDay = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct, kwhPriceUsd, useAverageReward }).periods.day.netUsd;
   let th = Math.max(Number(startTh) || 0, 0);
   let invested = th * pricePerThUsd;
   let earnedUsd = 0;
   let reinvestedUsd = 0;
+  let paidOutUsd = 0;
   let breakEvenMonth = null;
+  const blockers = new Map();
   const rows = [];
+  let dayIndex = 0;
   for (let month = 1; month <= span; month++) {
     th += monthlyUsd / pricePerThUsd;
     invested += monthlyUsd;
-    const netUsd = th * perThMonth;
-    earnedUsd += netUsd;
-    if (reinvest && netUsd > 0) {
-      th += (netUsd / reinvestPrice) * bonus;
-      reinvestedUsd += netUsd;
+    const monthEnd = Math.round(month * DAYS_PER_MONTH);
+    let netMonth = 0;
+    for (; dayIndex < monthEnd; dayIndex++) {
+      const netUsd = th * perThDay;
+      netMonth += netUsd;
+      earnedUsd += netUsd;
+      const blocker = reinvest && netUsd > 0 ? thReinvestBlocker({ powerTh: th, efficiencyWth, netUsdDay: netUsd }) : 'off';
+      if (reinvest && netUsd > 0 && !blocker) {
+        th += (netUsd / reinvestPrice) * bonus;
+        reinvestedUsd += netUsd;
+      } else {
+        if (reinvest && blocker !== 'off') blockers.set(blocker, (blockers.get(blocker) ?? 0) + 1);
+        paidOutUsd += Math.max(netUsd, 0);
+      }
     }
     if (breakEvenMonth === null && invested > 0 && earnedUsd >= invested) breakEvenMonth = month;
-    rows.push({ month, th: round(th, 3), investedUsd: round(invested, 2), netUsdMonth: round(netUsd, 2), earnedUsd: round(earnedUsd, 2) });
+    rows.push({ month, th: round(th, 3), investedUsd: round(invested, 2), netUsdMonth: round(netMonth, 2), earnedUsd: round(earnedUsd, 2) });
   }
   const last = rows.at(-1);
   return {
@@ -305,8 +332,11 @@ export function investmentPlan(market, {
       earnedUsd: last.earnedUsd,
       earnedBtc: round(earnedUsd / market.btcPriceUsd, 8),
       reinvestedUsd: round(reinvestedUsd, 2),
-      monthlyIncomeUsdAtEnd: round(last.th * perThMonth, 2),
+      paidOutUsd: round(paidOutUsd, 2),
+      monthlyIncomeUsdAtEnd: round(last.th * perThDay * DAYS_PER_MONTH, 2),
       breakEvenMonth,
+      // Days when reinvesting was on but GoMining's rules paid the reward in BTC instead, by reason.
+      reinvestBlockedDays: Object.fromEntries(blockers),
     },
   };
 }
@@ -430,55 +460,72 @@ export function halving(blockHeight, { blockMinutes = 10, satsPerThDay, now = Da
 
 // ---- Maintenance discount -----------------------------------------------------------------------
 
-// GoMining's maintenance discount has four parts that add up, to 30.2% at most (GoMining's figure):
+// GoMining's maintenance discount (docs.gomining.com, Maintenance fees and discounts) has four parts
+// that add up:
 //   paying in GOMINING  1% per 18 days of maintenance the GOMINING balance (wallet + locked) covers, max 20%
 //   VIP level           0% (Bronze I) up to 6% (Elite), see VIP_LEVELS
 //   Service Button      +0.3% for each day pressed in a row, max 3% after 10 days; missing a day resets it
-//   Mining mode         an extra discount for everyone in Mining mode (not Miner Wars). GoMining doesn't
-//                       state it alone; 1.2% is what's left of its 30.2% maximum after the other three.
+//   Mining mode         an extra discount for everyone in Mining mode (not Miner Wars, not during the
+//                       trial). Its size changes every Burn & Mint cycle with the veGOMINING vote and is
+//                       only shown inside the account, so it is entered by the member, never assumed.
+// The first three are fixed rules, 29% together at most; Mining mode comes on top.
+// None of them applies to the Bonus Miner.
 export const TOKEN_DISCOUNT = { daysPerPct: 18, maxPct: 20 };
 export const SERVICE_BUTTON = { pctPerDay: 0.3, maxDays: 10 };
-export const MINING_MODE_PCT = 1.2;
-export const MAX_DISCOUNT_PCT = 30.2;
-// GoMining VIP levels (from the app's VIP table). A level is reached by ANY one of three paths: own
-// mining power (TH), locked veGOMINING, or referral activity in USD over the last 180 days.
-// Each level sets the maintenance discount, the Simple Earn APR multiplier, the bonus TH when
-// reinvesting rewards in TH, and the referral royalty.
+export const VIP_MAX_DISCOUNT_PCT = 6;
+export const FIXED_MAX_DISCOUNT_PCT = round(TOKEN_DISCOUNT.maxPct + VIP_MAX_DISCOUNT_PCT + SERVICE_BUTTON.pctPerDay * SERVICE_BUTTON.maxDays, 2);
+// Reinvesting rewards into GOMINING tokens costs 2.25%; reinvesting into TH has no fee (docs: Rewards).
+export const GOMINING_REINVEST_FEE_PCT = 2.25;
+// GoMining's VIP table (gomining.com/vip, checked 4 Oct 2026). A level is reached by mining power (TH)
+// OR locked veGOMINING votes, or by referral activity over a rolling 180 days, whichever is highest.
+// GoMining publishes the TH and veGOMINING thresholds; the referral-activity thresholds are only
+// shown in the app, so they are not modelled. Each level sets the maintenance discount, the Simple
+// Earn APR multiplier, the Instant Funds fee, the Launchpad allocation, the referral mining royalty
+// and, from Silver I, the bonus TH when reinvesting rewards in TH (+5%, +10% from Diamond I).
 export const VIP_LEVELS = [
-  // name,          TH,     veGOMINING,  referral USD, discount %, Simple Earn x, royalty %
-  ['Bronze I',      0,      0,           0,            0,          1,     5],
-  ['Bronze II',     5,      50,          500,          0.3,        1.08,  5],
-  ['Silver I',      10,     100,         1_000,        0.6,        1.1,   7],
-  ['Silver II',     25,     250,         2_500,        0.9,        1.12,  7],
-  ['Silver III',    50,     500,         5_000,        1.2,        1.14,  7],
-  ['Gold I',        100,    1_000,       10_000,       1.5,        1.16,  9],
-  ['Gold II',       200,    2_000,       20_000,       1.8,        1.18,  9],
-  ['Platinum I',    500,    5_000,       50_000,       2.1,        1.2,   12],
-  ['Platinum II',   1_000,  10_000,      100_000,      2.4,        1.22,  12],
-  ['Platinum III',  2_500,  25_000,      250_000,      2.7,        1.24,  12],
-  ['Diamond I',     5_000,  50_000,      500_000,      3,          1.26,  14],
-  ['Diamond II',    7_000,  70_000,      700_000,      3.3,        1.28,  14],
-  ['Diamond III',   9_000,  90_000,      900_000,      3.6,        1.3,   14],
-  ['Diamond IV',    12_000, 120_000,     1_200_000,    3.9,        1.32,  14],
-  ['Diamond V',     20_000, 200_000,     2_000_000,    4.2,        1.34,  14],
-  ['Legend I',      50_000, 500_000,     5_000_000,    4.5,        1.36,  15],
-  ['Legend II',     100_000, 1_000_000,  10_000_000,   4.8,        1.38,  15],
-  ['Legend III',    250_000, 2_500_000,  25_000_000,   5.1,        1.4,   15],
-  ['Legend IV',     400_000, 4_000_000,  40_000_000,   5.4,        1.42,  15],
-  ['Legend V',      750_000, 7_500_000,  75_000_000,   5.7,        1.44,  15],
-  ['Elite',         1_000_000, 10_000_000, 100_000_000, 6,         1.46,  15],
-].map(([name, th, veGomining, referralUsd, discountPct, simpleEarnMultiplier, royaltyPct], index) => ({
-  name, th, veGomining, referralUsd, discountPct, simpleEarnMultiplier, royaltyPct, reinvestBonusPct: index >= 10 ? 10 : index >= 2 ? 5 : 0,
+  // name,          TH,        veGOMINING,  discount %, Simple Earn x, Instant Funds fee %, royalty %, Launchpad (x, tier)
+  ['Bronze I',      0,         0,           0,          1,     2.5,  5,  null],
+  ['Bronze II',     5,         50,          0.3,        1.08,  2.43, 5,  null],
+  ['Silver I',      10,        100,         0.6,        1.1,   2.36, 7,  [1, 1]],
+  ['Silver II',     25,        250,         0.9,        1.12,  2.29, 7,  [2.5, 2]],
+  ['Silver III',    50,        500,         1.2,        1.14,  2.21, 7,  [5.3, 3]],
+  ['Gold I',        100,       1_000,       1.5,        1.16,  2.14, 9,  [11, 4]],
+  ['Gold II',       200,       2_000,       1.8,        1.18,  2.07, 9,  [23, 5]],
+  ['Platinum I',    500,       5_000,       2.1,        1.2,   2,    12, [60, 6]],
+  ['Platinum II',   1_000,     10_000,      2.4,        1.22,  1.96, 12, [125, 7]],
+  ['Platinum III',  2_500,     25_000,      2.7,        1.24,  1.92, 12, [330, 8]],
+  ['Diamond I',     5_000,     50_000,      3,          1.26,  1.88, 14, [700, 9]],
+  ['Diamond II',    7_000,     70_000,      3.3,        1.28,  1.85, 14, [700, 9]],
+  ['Diamond III',   9_000,     90_000,      3.6,        1.3,   1.81, 14, [700, 9]],
+  ['Diamond IV',    12_000,    120_000,     3.9,        1.32,  1.77, 14, [700, 9]],
+  ['Diamond V',     20_000,    200_000,     4.2,        1.34,  1.73, 14, [700, 9]],
+  ['Legend I',      50_000,    500_000,     4.5,        1.36,  1.69, 15, [700, 9]],
+  ['Legend II',     100_000,   1_000_000,   4.8,        1.38,  1.65, 15, [700, 9]],
+  ['Legend III',    250_000,   2_500_000,   5.1,        1.4,   1.62, 15, [700, 9]],
+  ['Legend IV',     400_000,   4_000_000,   5.4,        1.42,  1.58, 15, [700, 9]],
+  ['Legend V',      750_000,   7_500_000,   5.7,        1.44,  1.54, 15, [700, 9]],
+  ['Elite',         1_000_000, 10_000_000,  6,          1.46,  1.5,  15, [700, 9]],
+].map(([name, th, veGomining, discountPct, simpleEarnMultiplier, instantFundsFeePct, royaltyPct, launchpad], index) => ({
+  name, th, veGomining, discountPct, simpleEarnMultiplier, instantFundsFeePct, royaltyPct,
+  launchpad: launchpad ? { multiplier: launchpad[0], tier: launchpad[1] } : null,
+  reinvestBonusPct: index >= 10 ? 10 : index >= 2 ? 5 : 0,
+  // Clan ownership in Miner Wars from Gold I, a personal VIP manager from Platinum I.
+  clanOwner: index >= 5,
+  vipManager: index >= 7,
 }));
 
-const findVip = (name) => VIP_LEVELS.find((row) => row.name.toLowerCase() === String(name ?? '').toLowerCase());
+// GoMining's table calls the top level "Elite V" and its docs call it "Elite"; both are accepted.
+const findVip = (name) => {
+  const wanted = String(name ?? '').toLowerCase().replace(/^elite v$/, 'elite');
+  return VIP_LEVELS.find((row) => row.name.toLowerCase() === wanted);
+};
 
-// Which VIP level a member has (the highest any one path reaches) and what the next level needs.
-export function vipStatus({ powerTh = 0, veGomining = 0, referralUsd = 0 } = {}) {
-  const have = { th: Math.max(Number(powerTh) || 0, 0), veGomining: Math.max(Number(veGomining) || 0, 0), referralUsd: Math.max(Number(referralUsd) || 0, 0) };
+// Which VIP level a member has (the higher of the TH and veGOMINING paths) and what the next level needs.
+export function vipStatus({ powerTh = 0, veGomining = 0 } = {}) {
+  const have = { th: Math.max(Number(powerTh) || 0, 0), veGomining: Math.max(Number(veGomining) || 0, 0) };
   const reached = (key) => VIP_LEVELS.reduce((best, row, index) => (have[key] >= row[key] ? index : best), 0);
-  const byPath = { th: reached('th'), veGomining: reached('veGomining'), referralUsd: reached('referralUsd') };
-  const index = Math.max(byPath.th, byPath.veGomining, byPath.referralUsd);
+  const byPath = { th: reached('th'), veGomining: reached('veGomining') };
+  const index = Math.max(byPath.th, byPath.veGomining);
   const level = VIP_LEVELS[index];
   const nextRow = VIP_LEVELS[index + 1] ?? null;
   return {
@@ -487,11 +534,10 @@ export function vipStatus({ powerTh = 0, veGomining = 0, referralUsd = 0 } = {})
     byPath: Object.fromEntries(Object.entries(byPath).map(([key, i]) => [key, VIP_LEVELS[i].name])),
     next: nextRow && {
       level: nextRow,
-      // Any ONE of these is enough.
+      // Either one is enough.
       needs: {
         th: round(Math.max(nextRow.th - have.th, 0), 2),
         veGomining: round(Math.max(nextRow.veGomining - have.veGomining, 0), 2),
-        referralUsd: round(Math.max(nextRow.referralUsd - have.referralUsd, 0), 2),
       },
       gains: {
         discountPct: round(nextRow.discountPct - level.discountPct, 2),
@@ -500,34 +546,58 @@ export function vipStatus({ powerTh = 0, veGomining = 0, referralUsd = 0 } = {})
         royaltyPct: nextRow.royaltyPct - level.royaltyPct,
       },
     },
+    note: 'Referral activity over the last 180 days is a third path; its thresholds are shown only in the GoMining app.',
   };
 }
 
-// Simple Earn: idle balances earn BTC (paid every 4 hours) at the asset's base APR times the VIP
-// multiplier. Base APRs change; these are GoMining's published rates as checked in October 2026, and
-// the app shows the current ones.
-export const SIMPLE_EARN_ASSETS = { BTC: 3.03, USDT: 9.85, USDC: 9.85, BNB: 1.52 };
-export const SIMPLE_EARN_RATES_CHECKED = '2026-10';
+// Simple Earn (docs: Simple Earn): idle balances earn at the asset's APR times the VIP multiplier,
+// counted on the lowest balance in each full 4-hour cycle (6 a day) and paid in BTC, or in TH with
+// 10% more TH. A TH reward needs at least $0.10 in that cycle; a smaller cycle is paid in BTC.
+// GoMining sets each asset's APR and changes it often, and shows the current one only in the app,
+// so the member enters it: nothing here assumes a rate.
+export const SIMPLE_EARN_ASSETS = ['BTC', 'USDT', 'USDC', 'ETH', 'SOL', 'BNB', 'GRAM'];
+export const SIMPLE_EARN_RULES = { cyclesPerDay: 6, thBonusPct: 10, thMinUsdPerCycle: 0.1 };
 
-export function simpleEarn({ amount, assetPriceUsd, aprPct, vipLevel, btcPriceUsd }) {
+export function simpleEarn({ amount, assetPriceUsd, aprPct, vipLevel, btcPriceUsd, rewardInTh = false, thPriceUsd }) {
   if (!(amount > 0)) throw new Error('Enter an amount');
   if (!(assetPriceUsd > 0)) throw new Error('The asset price is unavailable');
-  if (!(aprPct >= 0)) throw new Error('Enter the base APR');
+  if (!(aprPct >= 0)) throw new Error('Enter the APR your GoMining wallet shows for this asset');
   if (!(btcPriceUsd > 0)) throw new Error('The BTC price is unavailable');
   const level = findVip(vipLevel) ?? VIP_LEVELS[0];
   const effectiveAprPct = aprPct * level.simpleEarnMultiplier;
   const valueUsd = amount * assetPriceUsd;
   const yearUsd = (valueUsd * effectiveAprPct) / 100;
+  const cycleUsd = yearUsd / (365 * SIMPLE_EARN_RULES.cyclesPerDay);
+  // Paid in TH only when the cycle reaches the minimum; otherwise that cycle is paid in BTC as usual.
+  const inTh = rewardInTh && cycleUsd >= SIMPLE_EARN_RULES.thMinUsdPerCycle;
+  const thFactor = inTh ? 1 + SIMPLE_EARN_RULES.thBonusPct / 100 : 1;
   const periods = {};
   for (const [name, days] of PERIODS) {
     const usdValue = (yearUsd * days) / 365;
-    periods[name] = { usd: round(usdValue, 4), btc: round(usdValue / btcPriceUsd, 8), sats: Math.round(toSats(usdValue, btcPriceUsd)) };
+    periods[name] = {
+      usd: round(usdValue, 4),
+      btc: round(usdValue / btcPriceUsd, 8),
+      sats: Math.round(toSats(usdValue, btcPriceUsd)),
+      th: inTh && thPriceUsd > 0 ? round((usdValue * thFactor) / thPriceUsd, 4) : null,
+    };
   }
-  return { vipLevel: level.name, multiplier: level.simpleEarnMultiplier, baseAprPct: aprPct, effectiveAprPct: round(effectiveAprPct, 3), valueUsd: round(valueUsd, 2), periods };
+  return {
+    vipLevel: level.name,
+    multiplier: level.simpleEarnMultiplier,
+    baseAprPct: aprPct,
+    effectiveAprPct: round(effectiveAprPct, 3),
+    valueUsd: round(valueUsd, 2),
+    perCycleUsd: round(cycleUsd, 4),
+    rewardType: inTh ? 'TH' : 'BTC',
+    ...(rewardInTh && !inTh ? { thNote: `Each 4-hour cycle earns ${round(cycleUsd, 4)} USD, under the $${SIMPLE_EARN_RULES.thMinUsdPerCycle.toFixed(2)} minimum for TH, so it is paid in BTC` } : {}),
+    periods,
+  };
 }
+
 // `serviceButtonDays` is how many days in a row the Service Button has been pressed (0-10);
-// `serviceButton: true` means the full 10.
-export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHeld = 0, gominingUsd, vipLevel, vipPct = 0, serviceButton = false, serviceButtonDays, miningMode = false, kwhPriceUsd }) {
+// `serviceButton: true` means the full 10. `miningModePct` is the Mining mode discount the member's
+// app shows (it changes weekly), 0 when not given.
+export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHeld = 0, gominingUsd, vipLevel, vipPct = 0, serviceButton = false, serviceButtonDays, miningModePct = 0, kwhPriceUsd }) {
   if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
   const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
   const dailyUsd = (electricity * efficiencyWth + market.serviceUsdPerThDay) * powerTh;
@@ -536,10 +606,10 @@ export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHe
   const coverageDays = price && dailyUsd > 0 ? Math.floor((held * price) / dailyUsd) : 0;
   const tokenPct = Math.min(Math.floor(coverageDays / TOKEN_DISCOUNT.daysPerPct), TOKEN_DISCOUNT.maxPct);
   const level = findVip(vipLevel);
-  const vip = level ? level.discountPct : Math.min(Math.max(Number(vipPct) || 0, 0), 6);
+  const vip = level ? level.discountPct : Math.min(Math.max(Number(vipPct) || 0, 0), VIP_MAX_DISCOUNT_PCT);
   const days = serviceButtonDays !== undefined ? Number(serviceButtonDays) || 0 : serviceButton ? SERVICE_BUTTON.maxDays : 0;
   const buttonPct = round(Math.min(Math.max(Math.floor(days), 0), SERVICE_BUTTON.maxDays) * SERVICE_BUTTON.pctPerDay, 1);
-  const modePct = miningMode ? MINING_MODE_PCT : 0;
+  const modePct = Math.min(Math.max(Number(miningModePct) || 0, 0), 100);
   const tokensForDays = (days) => (price ? Math.ceil((days * dailyUsd) / price) : null);
   const nextPct = tokenPct < TOKEN_DISCOUNT.maxPct ? tokenPct + 1 : null;
   return {
@@ -551,7 +621,7 @@ export function maintenanceDiscount(market, { powerTh, efficiencyWth, gominingHe
     reinvestBonusPct: level?.reinvestBonusPct ?? null,
     serviceButtonPct: buttonPct,
     miningModePct: modePct,
-    totalPct: round(tokenPct + vip + buttonPct + modePct, 2),
+    totalPct: round(Math.min(tokenPct + vip + buttonPct + modePct, 100), 2),
     gominingForMax: tokensForDays(TOKEN_DISCOUNT.maxPct * TOKEN_DISCOUNT.daysPerPct),
     next: nextPct === null ? null : { pct: nextPct, gominingNeeded: tokensForDays(nextPct * TOKEN_DISCOUNT.daysPerPct) },
   };
@@ -574,15 +644,40 @@ export function minerWarsCycle(now = Date.now()) {
   };
 }
 
+// Points per second (docs: Game Mechanics): PPS = TH x base EE / your W/TH, base EE 20 W/TH.
+// Spells, boosts and avatar bonuses don't change the base PPS.
+export const MINER_WARS_BASE_EE = 20;
+export function pointsPerSecond(powerTh, efficiencyWth) {
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) return 0;
+  return round((powerTh * MINER_WARS_BASE_EE) / efficiencyWth, 4);
+}
+
+// GoMining's league names: "odyssey", "eclipse", "horizon", "dune-12" -> Odyssey, Eclipse, Horizon, Dune 12.
+export function leagueDisplayName(name) {
+  const [base, order] = String(name ?? '').split('-');
+  const title = base ? base[0].toUpperCase() + base.slice(1) : 'League';
+  return order ? `${title} ${order}` : title;
+}
+
+// Average round multiplier from a league's published odds: [{ p, v }] (probability, multiplier).
+export function expectedMultiplier(config) {
+  const rows = Array.isArray(config) ? config.filter((row) => row?.p >= 0 && row?.v > 0) : [];
+  const total = rows.reduce((sum, row) => sum + row.p, 0);
+  return total > 0 ? round(rows.reduce((sum, row) => sum + row.p * row.v, 0) / total, 3) : null;
+}
+
 // One week of Miner Wars against one week of plain mining, for a member's power, using GoMining's rules:
 //   - the clan's BTC (blocks won x BTC per block) is shared among members by TH;
 //   - maintenance for the member's FULL TH for the whole week is taken out of that reward, and a block
 //     never goes below zero (no debt): a share smaller than a week's maintenance pays nothing;
 //   - reward above what the member would have earned in Mining mode is charged electricity at the
-//     league's weighted-average W/TH and discount instead of the member's own.
-// Blocks are treated as equal value (GoMining weights rounds by a multiplier), so per-block floors
-// reduce to one floor on the week. Spells and personal GOMINING rewards are left out.
-// `joining`: the member isn't in the clan yet, so their TH is added to the clan total.
+//     league's weighted-average W/TH and discount instead of the member's own;
+//   - switching mode costs a day: the day you join a clan earns no Mining mode reward (and after
+//     leaving, daily BTC resumes only after a full UTC day in Mining mode). With `joining`, one day
+//     of Mining mode net is counted as the cost of switching.
+// GoMining weights each round by its multiplier, which can't be known in advance, so blocks are
+// treated as equal value and per-block floors reduce to one floor on the week. Spells and personal
+// GOMINING rewards are left out. `joining`: the member's TH is added to the clan total.
 export function minerWarsVsSolo(market, {
   powerTh, efficiencyWth, discountPct = 0, clanBlocksWeek, btcPerBlock, clanPowerTh, kwhPriceUsd,
   leagueEfficiencyWth, leagueDiscountPct, joining = false,
@@ -606,6 +701,9 @@ export function minerWarsVsSolo(market, {
   const chargedBtc = ownFeesBtc + excessBtc * leagueFeeRatio;
   const mwNetBtc = Math.max(mwGrossBtc - chargedBtc, 0);
   const soloNetBtc = soloNetUsd / btcPrice;
+  // The joining day earns no Mining mode reward: a one-off cost of one day's Mining mode net.
+  const switchCostBtc = joining ? Math.max(soloNetBtc / 7, 0) : 0;
+  const firstWeekBtc = mwNetBtc - switchCostBtc;
   return {
     sharePct: round(share * 100, 4),
     clanPowerTh: round(clanTh, 1),
@@ -618,10 +716,45 @@ export function minerWarsVsSolo(market, {
       netUsd: round(mwNetBtc * btcPrice, 2),
       // The share didn't cover a week's maintenance, so GoMining pays nothing (and charges nothing more).
       flooredAtZero: mwGrossBtc > 0 && chargedBtc >= mwGrossBtc,
+      switchCostBtc: round(switchCostBtc, 8),
+      firstWeekNetBtc: round(firstWeekBtc, 8),
     },
     differencePct: soloNetBtc > 0 ? round((mwNetBtc / soloNetBtc - 1) * 100, 1) : null,
     better: mwNetBtc > soloNetBtc ? 'minerWars' : 'solo',
   };
+}
+
+// Every clan on a league board ranked by what a week in it would pay this member, at the clan's pace
+// so far. The clan keeps winning at its pace (whatever won those blocks, power or spells), and the
+// member's TH adds its own fair chance: the league's weekly blocks x the member's share of league
+// power (the board publishes TH, not points). BTC is then shared by TH, GoMining's rule.
+// `blocksVsPower` is the clan's share of blocks over its share of power: around 1 for a clan winning
+// on power, far above 1 for one winning on spells, which only continues while its members keep
+// casting them. `board` is [{ clanId, name, position, blocks, powerTh, zone }], `league`
+// { btcPerBlock, totalPowerTh, totalBlocks, avgEfficiencyWth, avgDiscountPct }.
+export function clanFinder(market, { board, league, elapsedDays, powerTh, efficiencyWth, discountPct = 0, kwhPriceUsd, limit = 20 }) {
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
+  if (!(elapsedDays > 0.25)) return { rows: [], note: 'The cycle has only just started: there are no blocks to project from yet.' };
+  const scale = 7 / Math.min(elapsedDays, 7);
+  const leagueTh = Math.max(league.totalPowerTh || 0, 0);
+  const leagueBlocks = Math.max(league.totalBlocks || 0, 0);
+  const yourBlocks = leagueTh > 0 ? leagueBlocks * scale * (powerTh / (leagueTh + powerTh)) : 0;
+  const rows = (board ?? []).filter((clan) => clan.powerTh > 0).map((clan) => {
+    const blocksWithYou = clan.blocks * scale + yourBlocks;
+    const blockShare = leagueBlocks > 0 ? clan.blocks / leagueBlocks : 0;
+    const powerShare = leagueTh > 0 ? clan.powerTh / leagueTh : 0;
+    const r = minerWarsVsSolo(market, {
+      powerTh, efficiencyWth, discountPct, kwhPriceUsd, joining: true, clanBlocksWeek: blocksWithYou, btcPerBlock: league.btcPerBlock,
+      clanPowerTh: clan.powerTh, leagueEfficiencyWth: league.avgEfficiencyWth, leagueDiscountPct: league.avgDiscountPct ?? undefined,
+    });
+    return {
+      clanId: clan.clanId, name: clan.name, position: clan.position, zone: clan.zone, powerTh: clan.powerTh,
+      blocksWeek: round(blocksWithYou, 1), sharePct: r.sharePct, netBtc: r.minerWars.netBtc, netUsd: r.minerWars.netUsd,
+      flooredAtZero: r.minerWars.flooredAtZero, vsSoloPct: r.differencePct, soloNetBtc: r.solo.netBtc,
+      blocksVsPower: powerShare > 0 ? round(blockShare / powerShare, 2) : null,
+    };
+  }).sort((a, b) => b.netBtc - a.netBtc || a.position - b.position);
+  return { rows: rows.slice(0, limit), soloNetBtc: rows[0]?.soloNetBtc ?? null, yourBlocksWeek: round(yourBlocks, 2) };
 }
 
 // Rough net for the whole clan this week: the projected reward less a week of maintenance on the
@@ -631,4 +764,189 @@ export function minerWarsClanNet(market, { btcWeek, clanPowerTh, leagueEfficienc
   const feesPerThDay = (market.electricityUsdPerThPerWthDay * leagueEfficiencyWth + market.serviceUsdPerThDay) * (1 - clampPct(leagueDiscountPct));
   const maintenanceBtc = (feesPerThDay * clanPowerTh * 7) / market.btcPriceUsd;
   return { maintenanceBtc: round(maintenanceBtc, 8), netBtc: round(Math.max(btcWeek - maintenanceBtc, 0), 8) };
+}
+
+// ---- Planning tools -----------------------------------------------------------------------------
+
+// Net reward per TH per day for each W/TH (rows) at each BTC price (columns), at today's difficulty:
+// sats per TH stay the same and fees stay in USD, so only the USD value of the payout moves.
+export function breakEvenMatrix(market, { btcPrices, discountPct = 0, kwhPriceUsd, min = EFFICIENCY_RANGE.min, max = EFFICIENCY_RANGE.max }) {
+  const prices = [...new Set((btcPrices ?? []).map(Number).filter((p) => p > 0))].sort((a, b) => a - b);
+  if (!prices.length) throw new Error('Give at least one BTC price');
+  const discount = clampPct(discountPct);
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const btcPerTh = market.rewardSatsPerThDay / SATS_PER_BTC;
+  const rows = [];
+  for (let level = min; level <= max; level++) {
+    const feesUsd = (electricity * level + market.serviceUsdPerThDay) * (1 - discount);
+    rows.push({
+      efficiencyWth: level,
+      breakEvenBtcUsd: btcPerTh > 0 ? Math.round(feesUsd / btcPerTh) : null,
+      netUsdPerThDay: prices.map((price) => round(btcPerTh * price - feesUsd, 5)),
+    });
+  }
+  return { btcPrices: prices, satsPerThDay: market.rewardSatsPerThDay, discountPct: discount * 100, rows };
+}
+
+// Spend a budget on better efficiency or on more TH? Efficiency upgrades are priced from GoMining's
+// per-step table (each step improves the miner by one W/TH, priced per TH); more TH is priced at
+// `powerPricePerThUsd` (the member's power-upgrade price, or a new miner's list price per TH).
+export function upgradeComparison(market, upgrades, { powerTh, efficiencyWth, budgetUsd, discountPct = 0, kwhPriceUsd, powerPricePerThUsd }) {
+  if (!(powerTh > 0) || !(efficiencyWth > 0)) throw new Error('powerTh and efficiencyWth must be greater than 0');
+  const discount = clampPct(discountPct);
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const steps = upgrades?.efficiencyUpgradeSteps ?? [];
+  const stepPrice = (toLevel) => steps.find((step) => step.toLevelWth === toLevel)?.priceUsdPerTh ?? null;
+  const efficiency = [];
+  let costPerTh = 0;
+  for (let target = Math.ceil(efficiencyWth) - 1; target >= EFFICIENCY_RANGE.min; target--) {
+    const price = stepPrice(target);
+    if (price === null) break;
+    costPerTh += price;
+    const costUsd = costPerTh * powerTh;
+    const savingUsdDay = electricity * (efficiencyWth - target) * powerTh * (1 - discount);
+    efficiency.push({
+      toWth: target,
+      costUsd: round(costUsd, 2),
+      gainUsdDay: round(savingUsdDay, 4),
+      paybackDays: savingUsdDay > 0 ? Math.ceil(costUsd / savingUsdDay) : null,
+      affordable: budgetUsd > 0 ? costUsd <= budgetUsd : null,
+    });
+  }
+  const netPerThDay = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct: discount * 100, kwhPriceUsd }).periods.day.netUsd;
+  let power = null;
+  if (powerPricePerThUsd > 0 && budgetUsd > 0) {
+    const addedTh = budgetUsd / powerPricePerThUsd;
+    const gainUsdDay = addedTh * netPerThDay;
+    power = { pricePerThUsd: powerPricePerThUsd, addedTh: round(addedTh, 3), costUsd: round(budgetUsd, 2), gainUsdDay: round(gainUsdDay, 4), paybackDays: gainUsdDay > 0 ? Math.ceil(budgetUsd / gainUsdDay) : null };
+  }
+  // Best use of the budget: the deepest efficiency upgrade it pays for, against the TH it buys,
+  // compared by daily gain per dollar spent.
+  const bestEfficiency = efficiency.filter((row) => row.affordable).at(-1) ?? null;
+  const perDollar = (row) => (row && row.costUsd > 0 ? row.gainUsdDay / row.costUsd : -Infinity);
+  const verdict = !power && !bestEfficiency ? null : perDollar(bestEfficiency) >= perDollar(power) ? 'efficiency' : 'power';
+  return { netPerThDayUsd: round(netPerThDay, 6), efficiency, power, bestEfficiency, verdict };
+}
+
+// The same money in Simple Earn (APR x VIP multiplier, capital stays yours) or in new TH at a price
+// per TH (net mining reward at today's rates; the miner is kept and could be sold, but its resale
+// price can't be predicted, so it isn't counted).
+export function simpleEarnVsMining(market, { capitalUsd, aprPct, vipLevel, efficiencyWth, pricePerThUsd, discountPct = 0, kwhPriceUsd }) {
+  if (!(capitalUsd > 0)) throw new Error('Enter an amount');
+  if (!(aprPct >= 0)) throw new Error('Enter the Simple Earn APR your wallet shows');
+  if (!(pricePerThUsd > 0) || !(efficiencyWth > 0)) throw new Error('A miner price per TH and efficiency are needed');
+  const level = findVip(vipLevel) ?? VIP_LEVELS[0];
+  const earnYearUsd = (capitalUsd * aprPct * level.simpleEarnMultiplier) / 100;
+  const th = capitalUsd / pricePerThUsd;
+  const mineDayUsd = th * rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct, kwhPriceUsd }).periods.day.netUsd;
+  return {
+    simpleEarn: { aprPct: round(aprPct * level.simpleEarnMultiplier, 3), yearUsd: round(earnYearUsd, 2), monthUsd: round((earnYearUsd / 365) * DAYS_PER_MONTH, 2), capitalKept: true },
+    mining: { th: round(th, 3), yearUsd: round(mineDayUsd * 365, 2), monthUsd: round(mineDayUsd * DAYS_PER_MONTH, 2), paybackDays: mineDayUsd > 0 ? Math.ceil(capitalUsd / mineDayUsd) : null, returnPct: round(((mineDayUsd * 365) / capitalUsd) * 100, 2) },
+    better: mineDayUsd * 365 > earnYearUsd ? 'mining' : 'simpleEarn',
+  };
+}
+
+// ---- GOMINING token: veGOMINING and Burn & Mint -------------------------------------------------
+
+// Locking GOMINING for 1 week to 4 years gives veGOMINING votes in proportion to the lock length,
+// and the votes fall each week to zero at the lock's end (docs: veGOMINING & Locks). GoMining's own
+// lock statistics give votes / locked = average lock days / 1461, so 4 years counts as 1461 days.
+export const VE_MAX_LOCK_DAYS = 1461;
+export const VE_MIN_LOCK_DAYS = 7;
+
+// A lock's votes now and over time, the VIP level they give and how long it holds, and the GOMINING
+// rewards at GoMining's current yearly income per vote (held constant, although it moves weekly).
+export function veLock({ amount, lockDays, yearlyIncomePerVote, gominingUsd }) {
+  if (!(amount > 0)) throw new Error('Enter how much GOMINING to lock');
+  const days = Math.min(Math.max(Math.round(Number(lockDays) || 0), VE_MIN_LOCK_DAYS), VE_MAX_LOCK_DAYS);
+  const votes = (amount * days) / VE_MAX_LOCK_DAYS;
+  const votesAt = (day) => Math.max(votes * (1 - day / days), 0);
+  const status = vipStatus({ veGomining: votes });
+  const threshold = status.level.veGomining;
+  // The day the falling votes drop below the level reached at the start.
+  const levelHoldsDays = threshold > 0 ? Math.floor(days * (1 - threshold / votes)) : null;
+  const income = yearlyIncomePerVote > 0 ? yearlyIncomePerVote : null;
+  // Rewards follow the votes, which fall in a straight line: the average is half the starting votes.
+  const rewardsOver = (from, to) => (income === null ? null : ((votesAt(from) + votesAt(to)) / 2) * income * ((to - from) / 365));
+  const total = rewardsOver(0, days);
+  const step = Math.max(7, Math.round(days / 12 / 7) * 7);
+  const schedule = [];
+  for (let day = 0; day < days; day += step) schedule.push({ day, votes: round(votesAt(day), 2), vipLevel: vipStatus({ veGomining: votesAt(day) }).level.name });
+  schedule.push({ day: days, votes: 0, vipLevel: VIP_LEVELS[0].name });
+  return {
+    amount,
+    lockDays: days,
+    votes: round(votes, 2),
+    votesPerToken: round(days / VE_MAX_LOCK_DAYS, 4),
+    vipLevel: status.level.name,
+    vipHoldsDays: levelHoldsDays,
+    yearlyIncomePerVote: income,
+    rewardsFirstYear: income === null ? null : round(rewardsOver(0, Math.min(days, 365)), 2),
+    rewardsTotal: total === null ? null : round(total, 2),
+    rewardsTotalUsd: total !== null && gominingUsd > 0 ? round(total * gominingUsd, 2) : null,
+    schedule,
+  };
+}
+
+// Epochs (docs: Epochs): tokens to burn during the epoch and its mint coefficient C.
+export const EPOCHS = [
+  [10e6, 0.8], [20e6, 0.81], [30e6, 0.82], [40e6, 0.83], [50e6, 0.84], [60e6, 0.85], [70e6, 0.86], [80e6, 0.87], [90e6, 0.88], [100e6, 0.89],
+  [200e6, 0.9], [300e6, 0.91], [400e6, 0.92], [500e6, 0.93], [600e6, 0.94], [650e6, 0.95], [700e6, 0.96], [750e6, 0.97], [1_345_762_000, 0.98], [0, 0.99],
+].map(([toBurn, coefficient], epoch) => ({ epoch, toBurn, coefficient }));
+
+// GoMining's on-chain amounts have 18 decimals; whole tokens are plenty here.
+const fromWei = (value) => {
+  try {
+    return Number(BigInt(String(value ?? '0').split('.')[0] || '0') / 10n ** 12n) / 1e6;
+  } catch {
+    return 0;
+  }
+};
+
+// Weekly Burn & Mint cycles from GoMining's public record. Minted = (1 - V x (1 - C)) x burned
+// (docs: Voting), so V, the share of votes for burning, can be read back from each week.
+// `epochStart` is when the current epoch began.
+export function burnMintSummary(cycles, { epochStart } = {}) {
+  const weeks = (Array.isArray(cycles) ? cycles : [])
+    .filter((row) => typeof row?.blockCreatedAt === 'string' && row.burnValue !== undefined)
+    .map((row) => {
+      const burned = fromWei(row.burnValue);
+      const minted = fromWei(row.mintValue);
+      const epoch = Number(row.currentEpoch);
+      const c = EPOCHS[epoch]?.coefficient;
+      const ratio = burned > 0 ? minted / burned : null;
+      const share = (label) => fromWei((Array.isArray(row.mintReceivers) ? row.mintReceivers : []).find((r) => r?.label === label)?.value);
+      return {
+        date: row.blockCreatedAt.slice(0, 10),
+        epoch,
+        burned: Math.round(burned),
+        minted: Math.round(minted),
+        netBurned: Math.round(burned - minted),
+        burnVotePct: ratio !== null && c !== undefined ? round(Math.min(Math.max((1 - ratio) / (1 - c), 0), 1) * 100, 1) : null,
+        toVeHolders: Math.round(share('mintReward')),
+        toRewards: Math.round(share('nftMarketing')),
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const last = weeks.at(-1) ?? null;
+  const epoch = last ? EPOCHS[last.epoch] ?? null : null;
+  const start = epochStart ? String(epochStart).slice(0, 10) : null;
+  const inEpoch = start && last ? weeks.filter((w) => w.date >= start && w.epoch === last.epoch) : [];
+  const burnedThisEpoch = inEpoch.reduce((sum, w) => sum + w.burned, 0);
+  const avgWeek = inEpoch.length ? burnedThisEpoch / inEpoch.length : 0;
+  return {
+    weeks,
+    latest: last,
+    totals: { cycles: weeks.length, burned: weeks.reduce((s, w) => s + w.burned, 0), minted: weeks.reduce((s, w) => s + w.minted, 0), netBurned: weeks.reduce((s, w) => s + w.netBurned, 0) },
+    epoch: epoch && {
+      number: epoch.epoch,
+      coefficient: epoch.coefficient,
+      toBurn: epoch.toBurn,
+      startDate: start,
+      burned: start ? burnedThisEpoch : null,
+      progressPct: start && epoch.toBurn > 0 ? round(Math.min((burnedThisEpoch / epoch.toBurn) * 100, 100), 1) : null,
+      // At this epoch's average weekly burn, how many more weekly cycles until the next epoch.
+      cyclesLeft: avgWeek > 0 && epoch.toBurn > burnedThisEpoch ? Math.ceil((epoch.toBurn - burnedThisEpoch) / avgWeek) : null,
+    },
+  };
 }
