@@ -397,38 +397,45 @@ function renderOutlook() {
   renderFearGreed(outlook.sentiment);
 }
 
+// "How far can BTC fall?": for each W/TH, the drop in BTC price a miner can take before the payout
+// stops covering electricity + service (its break-even price), at today's difficulty.
 function renderBreakEven(be) {
   const body = $('be-body');
   if (!be?.rows?.length) { body.replaceChildren(empty('Break-even prices need GoMining payout data.')); return; }
   const btc = be.btcPriceUsd;
-  const selected = be.rows.find((row) => row.efficiencyWth === Math.round(state.efficiency)) ?? be.rows[0];
+  const rows = be.rows.map((row) => ({ ...row, dropPct: (1 - row.breakEvenBtcUsd / btc) * 100 }));
+  const selected = rows.find((row) => row.efficiencyWth === Math.round(state.efficiency)) ?? rows[0];
+  const tone = (drop) => (drop >= 30 ? 'safe' : drop >= 10 ? 'warn' : 'risk');
   const head = el('div', 'be-head');
-  const big = el('p', 'big-number', usd(selected.breakEvenBtcUsd, 0));
+  const big = el('p', `big-number be-${tone(selected.dropPct)}`, selected.dropPct > 0 ? `−${num(selected.dropPct, 0)}%` : 'Losing');
   big.appendChild(el('small', '', `at ${selected.efficiencyWth} W/TH`));
   head.appendChild(big);
   const sub = el('p', 'card-sub');
-  const above = selected.headroomPct;
-  const word = el('span', above >= 0 ? 'good' : 'bad', `${num(Math.abs(above), 0)}% ${above >= 0 ? 'above' : 'below'}`);
-  sub.append('BTC is ', word, ` break-even (${usd(btc, 0)} now)`);
-  const scale = Math.max(btc, ...be.rows.map((row) => row.breakEvenBtcUsd)) * 1.08;
+  if (selected.dropPct > 0) sub.append(`BTC (now ${usd(btc, 0)}) can fall `, bold(`${num(selected.dropPct, 0)}%`), ', to ', bold(usd(selected.breakEvenBtcUsd, 0)), `, before a ${selected.efficiencyWth} W/TH miner stops earning.`);
+  else sub.append(`At ${usd(btc, 0)} a ${selected.efficiencyWth} W/TH miner already pays more in fees than it earns. BTC needs to reach `, bold(usd(selected.breakEvenBtcUsd, 0)), '.');
+  const scale = Math.max(...rows.map((row) => row.dropPct), 1);
   const list = el('div', 'be-list');
   list.setAttribute('role', 'list');
-  for (const row of be.rows) {
-    const line = el('div', `be-row${row === selected ? ' sel' : ''}${row.breakEvenBtcUsd > btc ? ' over' : ''}`);
+  for (const row of rows) {
+    const line = el('div', `be-row${row === selected ? ' sel' : ''}`);
     line.setAttribute('role', 'listitem');
     const track = el('div', 'be-track');
-    const fill = el('span', 'be-fill');
-    fill.style.width = `${(row.breakEvenBtcUsd / scale) * 100}%`;
+    const fill = el('span', `be-fill be-${tone(row.dropPct)}`);
+    fill.style.width = `${Math.max(row.dropPct, 0) / scale * 100}%`;
     track.appendChild(fill);
-    line.append(el('span', 'be-w', `${row.efficiencyWth} W/TH`), track, el('span', 'be-val', usd(row.breakEvenBtcUsd, 0)));
+    const value = el('span', 'be-val');
+    value.append(bold(row.dropPct > 0 ? `−${num(row.dropPct, 0)}%` : 'losing'), el('small', '', ` below ${usd(row.breakEvenBtcUsd, 0)}`));
+    line.append(el('span', 'be-w', `${row.efficiencyWth} W/TH`), track, value);
+    line.title = `${row.efficiencyWth} W/TH stops earning if BTC falls below ${usd(row.breakEvenBtcUsd, 0)}`;
     list.appendChild(line);
   }
-  const now = el('div', 'be-now');
-  now.style.left = `calc(var(--label) + 10px + (100% - var(--label) - var(--value) - 20px) * ${btc / scale})`;
-  now.appendChild(el('span', '', `BTC now ${usd(btc, 0)}`));
-  now.setAttribute('aria-hidden', 'true');
-  list.appendChild(now);
-  body.replaceChildren(head, sub, list);
+  const legend = el('p', 'be-legend');
+  for (const [cls, label] of [['be-safe', 'more than 30% room'], ['be-warn', '10–30%'], ['be-risk', 'under 10%']]) {
+    const item = el('span', 'be-legend-item');
+    item.append(el('span', `be-key ${cls}`), label);
+    legend.appendChild(item);
+  }
+  body.replaceChildren(head, sub, list, legend);
 }
 
 function renderHalving(h) {
