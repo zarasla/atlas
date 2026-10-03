@@ -4,16 +4,21 @@
 //   GET /api/market     payout, miner prices, upgrade tables, efficiency curve, and data source
 //   GET /api/history    payouts recorded on days this server fetched live data
 //   GET /api/earnings   ?powerTh=16&efficiencyWth=15&days=30[&priceUsd=250][&average=1]
+//   /mcp/<MCP_ACCESS_KEY>  the MCP server over Streamable HTTP, for Claude's custom connectors
 //
-// The GoMining account passthrough is deliberately not exposed here: the dashboard only ever
-// needs public data, and an HTTP route would let anything on the network use your token.
+// The dashboard routes never see a GoMining token. The remote MCP endpoint is off unless
+// MCP_ACCESS_KEY is set (at least 32 characters); the key is the secret part of the URL, so only
+// someone with the full connector URL can reach the tools. Never commit the key or the URL.
 
+import { timingSafeEqual } from 'node:crypto';
 import { createServer as createHttpServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { calculateEarnings, efficiencyCurve, findListedPrice } from '../core/calc.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { fromEnv } from '../core/config.js';
+import { createServer as createMcpServer } from '../mcp/server.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -30,12 +35,58 @@ const send = (res, status, body, type = 'application/json; charset=utf-8') => {
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
+const MAX_BODY_BYTES = 1_000_000;
+const MIN_KEY_LENGTH = 32;
+
+// Constant-time comparison so the key can't be guessed one character at a time.
+const sameKey = (given, expected) => {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+async function readJson(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) throw Object.assign(new Error('Request body too large'), { status: 413 });
+    chunks.push(chunk);
+  }
+  if (!size) return undefined;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('Invalid JSON'), { status: 400 });
+  }
+}
+
+// Stateless MCP: a fresh server and transport per request, which is all Claude's connectors need.
+async function handleMcp(req, res, mcp) {
+  const body = req.method === 'POST' ? await readJson(req) : undefined;
+  const server = createMcpServer(mcp);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  res.on('close', () => {
+    transport.close().catch(() => {});
+    server.close().catch(() => {});
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, body);
+}
+
 const positive = (value) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : undefined;
 };
 
-export function createApp({ market }) {
+/**
+ * @param {object} options
+ * @param {import('../core/market.js').MarketService} options.market  tokenless market for the dashboard
+ * @param {{ key: string, client: object, market: object, allowWrites?: boolean }} [options.mcp]
+ *   enables /mcp/<key>; omitted or a short key leaves the endpoint off
+ */
+export function createApp({ market, mcp }) {
+  const mcpEnabled = Boolean(mcp?.key && mcp.key.length >= MIN_KEY_LENGTH);
   const routes = {
     '/api/market': async (url) => {
       const data = await market.get({ fresh: url.searchParams.get('refresh') === '1' });
@@ -62,6 +113,12 @@ export function createApp({ market }) {
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
+      if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) {
+        const key = url.pathname.slice('/mcp/'.length);
+        // Same 404 for "off" and "wrong key", so the endpoint's existence isn't revealed.
+        if (!mcpEnabled || !sameKey(key, mcp.key)) return send(res, 404, { error: 'Not found' });
+        return await handleMcp(req, res, mcp);
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Method not allowed' });
       const route = routes[url.pathname];
       if (route) {
@@ -78,7 +135,8 @@ export function createApp({ market }) {
       if (!body) return send(res, 404, 'Not found', 'text/plain');
       return send(res, 200, body, TYPES[extname(file)] ?? 'application/octet-stream');
     } catch (error) {
-      return send(res, 500, { error: error?.message ?? String(error) });
+      if (res.headersSent) return res.end();
+      return send(res, error?.status ?? 500, { error: error?.message ?? String(error) });
     }
   };
 }
@@ -86,7 +144,13 @@ export function createApp({ market }) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
   const port = Number(process.env.PORT) || 4173;
   const host = process.env.HOST || '127.0.0.1';
-  createHttpServer(createApp(fromEnv(process.env, { withToken: false }))).listen(port, host, () => {
+  const dashboard = fromEnv(process.env, { withToken: false });
+  const key = process.env.MCP_ACCESS_KEY?.trim();
+  // The MCP tools may use a GoMining token (from the VPS env file); the dashboard never does.
+  const mcp = key ? { key, ...fromEnv(process.env), market: dashboard.market } : undefined;
+  createHttpServer(createApp({ market: dashboard.market, mcp })).listen(port, host, () => {
     console.log(`GoMining Hub dashboard: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
+    if (key && key.length < MIN_KEY_LENGTH) console.log(`Remote MCP is OFF: MCP_ACCESS_KEY must be at least ${MIN_KEY_LENGTH} characters`);
+    else console.log(`Remote MCP: ${key ? 'on at /mcp/<MCP_ACCESS_KEY>' : 'off (MCP_ACCESS_KEY not set)'}`);
   });
 }

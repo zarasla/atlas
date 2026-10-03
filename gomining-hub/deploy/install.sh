@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Installs or updates GoMining Hub on a Debian/Ubuntu VPS behind your existing web server.
-# Run from the gomining-hub folder on the VPS:  sudo bash deploy/install.sh hub.gooses.online
+# Run on the VPS:  sudo bash deploy/install.sh gooses.online
 #
 # What it does, and nothing else:
+#   - installs Node.js 22 and Caddy if they are missing (Caddy only if no web server is running)
 #   - creates a locked system user `gominghub` (no shell, no login)
 #   - copies the app to /opt/gomining-hub and installs production dependencies
 #   - installs and starts the gomining-hub systemd service on 127.0.0.1:4173 (not exposed)
+#   - creates /etc/gomining-hub.env (root-only) with a random MCP_ACCESS_KEY, kept across updates
+#   - prints the Claude connector URL once, in this terminal only
 #   - adds one site for your domain to Caddy or nginx, whichever is already running
 # It never stops, edits or restarts other sites or services (e.g. the Goose Discord bot);
 # the web server is only reloaded after its config test passes.
@@ -18,8 +21,13 @@ DOMAIN="${1:-}"
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 APP=/opt/gomining-hub
 
-command -v node >/dev/null || { echo "Node.js 20+ is required: https://nodejs.org/en/download (or: curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs)"; exit 1; }
-[ "$(node -p 'process.versions.node.split(".")[0]')" -ge 20 ] || { echo "Node.js 20+ is required, found $(node -v)"; exit 1; }
+echo "== Node.js"
+if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
+  apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg >/dev/null
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
+  apt-get install -y -qq nodejs >/dev/null
+fi
+node -v
 
 echo "== User"
 id gominghub >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin gominghub
@@ -38,6 +46,15 @@ fi
 chown -R root:root "$APP"
 chmod -R go-w "$APP"
 
+echo "== Secrets (stay on this server only)"
+ENV_FILE=/etc/gomining-hub.env
+touch "$ENV_FILE"; chown root:root "$ENV_FILE"; chmod 600 "$ENV_FILE"
+if ! grep -q '^MCP_ACCESS_KEY=' "$ENV_FILE"; then
+  echo "MCP_ACCESS_KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> "$ENV_FILE"
+  echo "generated a new MCP access key"
+fi
+grep -q '^# GOMINING_TOKEN=' "$ENV_FILE" || grep -q '^GOMINING_TOKEN=' "$ENV_FILE" || echo "# GOMINING_TOKEN=   (optional: paste your app.gomining.com token here for account tools, then: systemctl restart gomining-hub)" >> "$ENV_FILE"
+
 echo "== Service"
 install -m 644 "$SRC/deploy/gomining-hub.service" /etc/systemd/system/gomining-hub.service
 systemctl daemon-reload
@@ -47,6 +64,20 @@ sleep 2
 curl -fsS -o /dev/null http://127.0.0.1:4173/api/market && echo "dashboard answering on 127.0.0.1:4173" || { echo "Service did not start:"; journalctl -u gomining-hub -n 30 --no-pager; exit 1; }
 
 echo "== Web server"
+if ! systemctl is-active --quiet caddy && ! systemctl is-active --quiet nginx; then
+  if ss -tln | grep -qE ':(80|443)\b'; then
+    echo "Ports 80/443 are used by something other than Caddy or nginx; not installing a web server."
+    ss -tlnp | grep -E ':(80|443)\b'; exit 1
+  fi
+  echo "No web server running: installing Caddy"
+  apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gnupg >/dev/null
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
+  apt-get update -qq && apt-get install -y -qq caddy >/dev/null
+  # Fresh install: replace the placeholder site with just our sites folder.
+  printf 'import sites/*\n' > /etc/caddy/Caddyfile
+  systemctl enable --now caddy
+fi
 if systemctl is-active --quiet caddy; then
   mkdir -p /etc/caddy/sites
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak.$(date +%s)"
@@ -79,4 +110,10 @@ else
   echo "The dashboard is running locally on 127.0.0.1:4173 in the meantime (not reachable from outside)."
 fi
 
-echo "== Done: https://$DOMAIN"
+echo
+echo "== Done"
+echo "Dashboard:  https://$DOMAIN"
+KEY="$(grep '^MCP_ACCESS_KEY=' "$ENV_FILE" | cut -d= -f2)"
+echo "Claude connector URL (secret, don't share or commit it):"
+echo "  https://$DOMAIN/mcp/$KEY"
+echo "Add it in Claude: Settings > Connectors > Add custom connector."
