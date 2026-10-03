@@ -46,7 +46,7 @@
       <header class="card-head">
         <div>
           <h2>Goose Calculator</h2>
-          <p class="card-sub" id="gc-sub">Live GoMining payout and fees, your own miner and discount</p>
+          <p class="card-sub" id="gc-sub">Uses GoMining's latest daily payout (settled once a day) and fees, plus your own miner and discounts</p>
         </div>
         <div class="seg" role="radiogroup" aria-label="Calculator mode" id="gc-mode">
           <button type="button" role="radio" aria-checked="true" data-mode="rewards">Rewards</button>
@@ -58,15 +58,28 @@
       <form id="gc-form" class="gc-form" autocomplete="off">
         <label class="field"><span>Power (TH)</span><input name="powerTh" type="number" min="0" step="any" value="16" inputmode="decimal"></label>
         <label class="field"><span>Efficiency (W/TH)</span><input name="efficiencyWth" type="number" min="1" step="any" value="15" inputmode="decimal"></label>
-        <label class="field"><span>Maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="field"><span>Total maintenance discount (%)</span><input name="discountPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="field"><span>Electricity ($/kWh)</span><input name="kwhPriceUsd" type="number" min="0" step="any" placeholder="GoMining rate" inputmode="decimal"></label>
         <label class="field" data-only="rewards"><span>Price paid (USD)</span><input name="priceUsd" type="number" min="0" step="any" placeholder="Listed price" inputmode="decimal"></label>
         <label class="field" data-only="plan"><span>Monthly budget (USD)</span><input name="monthlyUsd" type="number" min="0" step="any" value="100" inputmode="decimal"></label>
         <label class="field" data-only="plan"><span>Months</span><input name="months" type="number" min="1" max="120" step="1" value="24" inputmode="numeric"></label>
-        <label class="field" data-only="plan"><span>Price per TH (USD)</span><input name="pricePerThUsd" type="number" min="0" step="any" placeholder="Listed" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Price per TH, new purchases</span><input name="pricePerThUsd" type="number" min="0" step="any" placeholder="New-miner price" inputmode="decimal"></label>
         <label class="check" data-only="plan"><input name="reinvest" type="checkbox"> Reinvest rewards every month</label>
-        <label class="check"><input name="average" type="checkbox"> Use 365-day average payout instead of today's</label>
+        <label class="field" data-only="plan"><span>Price per TH when reinvesting</span><input name="reinvestPricePerThUsd" type="number" min="0" step="any" placeholder="Your power-upgrade price" inputmode="decimal"></label>
+        <label class="field" data-only="plan"><span>Reinvest bonus (%)</span><input name="reinvestBonusPct" type="number" min="0" max="100" step="any" value="0" inputmode="decimal"></label>
+        <label class="check"><input name="average" type="checkbox"> Use GoMining's 365-day average payout per TH instead of the latest day's</label>
       </form>
-      <p class="fine gc-hint">Discount: your VIP maintenance discount and/or the saving from paying fees in GOMINING, as a percentage of electricity + service.</p>
+      <details class="gc-hint">
+        <summary>Which discounts, prices and payouts to enter?</summary>
+        <ul>
+          <li><strong>Total maintenance discount</strong> is the combined discount on electricity + service your GoMining app shows for your miners. It can include an automatic mining-mode discount, the service-button discount, paying maintenance in GOMINING and your VIP level. These change and depend on your account, so this site can't know them: enter your own total.</li>
+          <li><strong>Electricity</strong> defaults to the rate in GoMining's latest payout data. Enter a different $/kWh if your miners use another rate.</li>
+          <li><strong>Price per TH, new purchases</strong> defaults to GoMining's listed price for new miners (primary market, not the secondary marketplace).</li>
+          <li><strong>Reinvesting</strong> into an existing miner is priced as a power upgrade, not as a new miner. Enter the power-upgrade price per TH your app shows, and any reinvest bonus (for example a VIP +5% or +10%). GoMining's reinvestment eligibility rules and minimums aren't checked here.</li>
+          <li><strong>365-day average</strong> is GoMining's total gross payout per TH over the last year divided by 365, which smooths out daily swings.</li>
+          <li>Miner Wars rewards aren't included anywhere in these calculators.</li>
+        </ul>
+      </details>
 
       <div id="gc-rewards" aria-live="polite">
         <div class="gc-headline">
@@ -181,7 +194,7 @@
       <header class="card-head">
         <div>
           <h2>Miner payback</h2>
-          <p class="card-sub" id="roi-sub">Every miner GoMining sells, at today's payout and fees</p>
+          <p class="card-sub" id="roi-sub">Every new miner GoMining sells (primary market), at the latest payout and list fees, before your discounts</p>
         </div>
       </header>
       <div class="best" id="roi-best" hidden></div>
@@ -193,7 +206,7 @@
         <header class="card-head">
           <div>
             <h2>Miner prices</h2>
-            <p class="card-sub">Price per TH by miner size</p>
+            <p class="card-sub">New miners sold by GoMining (primary market), price per TH by size</p>
           </div>
           <button class="link-btn" type="button" data-table-toggle="prices">Table</button>
         </header>
@@ -206,7 +219,7 @@
         <header class="card-head">
           <div>
             <h2>Upgrade advisor</h2>
-            <p class="card-sub">Is one W/TH less worth it? Cost per TH against electricity saved</p>
+            <p class="card-sub" id="advisor-sub">Is one W/TH less worth it? Cost per TH against electricity saved</p>
           </div>
         </header>
         <div class="table-wrap scroll" id="upgrade-table"></div>
@@ -230,16 +243,16 @@
       <summary><h2>How it works</h2></summary>
       <div class="help-body">
         <p><strong>Where the numbers come from.</strong> GoMining publishes the daily payout per TH, the BTC price it uses, the electricity and service fees and its miner prices. This site reads them live every few minutes, adds Bitcoin network data from mempool.space and prices from CoinGecko, and does the maths.</p>
-        <p><strong>Net reward</strong> = payout − electricity (your W/TH × the electricity rate) − service fee, per TH per day. Your <strong>maintenance discount</strong> (VIP level, paying fees in GOMINING) reduces electricity + service by that percentage.</p>
+        <p><strong>Net reward</strong> = payout − electricity (your W/TH × the electricity rate) − service fee, per TH per day. Your <strong>total maintenance discount</strong> (mining-mode, service-button, GOMINING payment and VIP discounts, as your app shows them) reduces electricity + service by that percentage. GoMining settles the payout once a day, so the numbers change daily, not live.</p>
         <p><strong>My miners</strong> stays in your own browser. Clearing your browser data or switching device starts it empty again. Your GoMining account is never connected or asked for.</p>
-        <p><strong>Estimates, not promises.</strong> Everything assumes today's payout and fees stay the same. BTC price, network difficulty and GoMining's fees change, so treat payback and plans as a guide. Not financial advice.</p>
+        <p><strong>Estimates, not promises.</strong> Everything assumes the latest payout and fees stay the same, and Miner Wars rewards are not included. BTC price, network difficulty and GoMining's fees change, so treat payback and plans as a guide. Not financial advice.</p>
         <p><strong>Share a calculation</strong> with “Copy link for Discord”: the link opens the calculator with your exact numbers.</p>
       </div>
     </details>
 
     <footer class="foot">
       <img src="goose-logo-160.webp" alt="" width="28" height="28">
-      <p>Built for HONKSQUAD by The Goose's. Data: GoMining's public API (payout, fees, miner prices, upgrade rates), mempool.space (Bitcoin network) and CoinGecko (prices). Estimates exclude fee discounts (GOMINING token, VIP, clan and league boosts) and future BTC price or difficulty changes. Not financial advice.</p>
+      <p>Built for HONKSQUAD by The Goose's. Data: GoMining's public API (payout, fees, miner prices, upgrade rates), mempool.space (Bitcoin network) and CoinGecko (prices). Estimates use GoMining's latest daily payout and fees plus the discounts you enter. They exclude Miner Wars rewards and future BTC price, difficulty or fee changes. Not financial advice.</p>
     </footer>
   </main>
 

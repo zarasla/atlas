@@ -192,7 +192,10 @@ main[aria-busy="true"] .chart, main[aria-busy="true"] .hero-value { opacity: 0.5
 /* Goose Calculator */
 .goose-calc { border-color: var(--border-strong); background: radial-gradient(600px 260px at 100% 0%, rgba(247, 181, 0, 0.08), transparent 70%), linear-gradient(180deg, #0f2140, #0a1426); }
 .gc-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.gc-hint { margin-top: 8px; }
+.gc-hint { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.gc-hint summary { cursor: pointer; color: var(--cyan); }
+.gc-hint ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.gc-hint strong { color: var(--ink); }
 .gc-headline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0 6px; padding-top: 18px; border-top: 1px solid var(--border); }
 .gc-headline .calc-big.neg { color: var(--critical); }
 #gc-table td:first-child, #gc-table th:first-child { white-space: nowrap; }

@@ -132,3 +132,22 @@ test('portfolio totals a member\'s miners and suggests the next upgrade per mine
   assert.ok(discounted.totals.netUsdDay > p.rows[0].netUsdDay);
   assert.equal(portfolio(market, []).totals.avgEfficiencyWth, null);
 });
+
+test('audit fixes: discounted upgrade savings, electricity override, reinvest price and bonus', async () => {
+  const { investmentPlan, rewardsBreakdown } = await import('../src/core/calc.js');
+  const [step] = upgradeAdvisor(market, normalizeUpgradeRates(upgradeRates), { discountPct: 50 });
+  assert.equal(step.savingUsdPerThDay, 0.0006);
+  assert.equal(step.paybackDays, 1834);
+  assert.equal(upgradeAdvisor(market, normalizeUpgradeRates(upgradeRates), { kwhPriceUsd: 0.1 })[0].savingUsdPerThDay, 0.0024);
+  // $0.10/kWh doubles electricity: 0.0024 × 15 × 16 = 0.576 a day
+  const pricey = rewardsBreakdown(market, { powerTh: 16, efficiencyWth: 15, kwhPriceUsd: 0.1 });
+  assert.equal(pricey.periods.day.electricityUsd, 0.576);
+  assert.equal(pricey.input.kwhPriceUsd, 0.1);
+  const base = { startTh: 100, efficiencyWth: 12, monthlyUsd: 0, months: 12, pricePerThUsd: 20, reinvest: true };
+  const plain = investmentPlan(market, base);
+  const cheaper = investmentPlan(market, { ...base, reinvestPricePerThUsd: 10 });
+  const bonus = investmentPlan(market, { ...base, reinvestBonusPct: 10 });
+  assert.ok(cheaper.summary.finalTh > plain.summary.finalTh);
+  assert.ok(bonus.summary.finalTh > plain.summary.finalTh);
+  assert.equal(plain.summary.investedUsd, 2000);
+});

@@ -1,5 +1,5 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
-import { findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown } from '/lib/calc.js';
+import { findListedPrice, investmentPlan, listedPricePerTh, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -75,7 +75,8 @@ function showNotice(message) {
 function renderSource() {
   const m = state.market;
   if (m.source === 'live') {
-    setSource('live', `Live · ${time(m.fetchedAt)}`);
+    // GoMining settles the payout once a day: say which payout is shown and when it was checked.
+    setSource('live', `Payout ${new Date(m.income.payoutDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · checked ${time(m.fetchedAt)}`);
     showNotice('');
   } else {
     setSource('sample', 'Sample data');
@@ -361,7 +362,11 @@ function renderHistory() {
 }
 
 function renderAdvisor() {
-  const steps = state.market.upgradeAdvisor;
+  // Savings shrink with the maintenance discount entered in the calculator.
+  const discountPct = Number($('gc-form').elements.discountPct.value) || 0;
+  const kwhPriceUsd = Number($('gc-form').elements.kwhPriceUsd.value) || undefined;
+  const steps = upgradeAdvisor(state.market.income, state.market.upgrades, { discountPct, kwhPriceUsd });
+  $('advisor-sub').textContent = `Is one W/TH less worth it? Cost per TH against electricity saved, after your ${num(discountPct, 1)}% maintenance discount (set in the calculator)`;
   if (!steps.length) {
     $('upgrade-table').replaceChildren(empty('No upgrade prices available.'));
     return;
@@ -442,6 +447,9 @@ function formValues() {
     monthlyUsd: n('monthlyUsd') ?? 0,
     months: n('months') ?? 12,
     pricePerThUsd: n('pricePerThUsd'),
+    reinvestPricePerThUsd: n('reinvestPricePerThUsd'),
+    reinvestBonusPct: n('reinvestBonusPct') ?? 0,
+    kwhPriceUsd: n('kwhPriceUsd'),
     reinvest: f.reinvest.checked,
     useAverageReward: f.average.checked,
   };
@@ -465,7 +473,7 @@ function renderCalculator() {
   const v = formValues();
   const income = state.market.income;
   const gmt = state.market.prices?.gomining?.usd;
-  const basis = v.useAverageReward ? '365-day average payout' : "today's payout";
+  const basis = v.useAverageReward ? "GoMining's 365-day average payout" : "GoMining's latest daily payout";
   const sample = state.market.sources.income === 'sample' ? ' (sample data)' : '';
   try {
     if (!(v.efficiencyWth > 0)) throw new Error('Enter an efficiency in W/TH.');
@@ -485,19 +493,22 @@ function renderCalculator() {
       $('gc-payback-sub').textContent = r.payback
         ? `${num(r.payback.annualReturnPct, 1)}% a year on ${usd(r.payback.priceUsd, 2)}${listed ? ' (listed price)' : ''}`
         : 'Add the price you paid';
-      // The GOMINING column only appears when the token price feed answered.
+      // Rewards are paid in BTC; the GOMINING column is only a conversion at market price, shown when the price feed answered.
       const withGmt = d.netGomining !== null;
-      table($('gc-table'), ['Period', 'Gross', 'Electricity', 'Service', 'Discount', 'Net USD', 'Net BTC', 'Net sats', ...(withGmt ? ['GOMINING'] : [])],
+      table($('gc-table'), ['Period', 'Gross', 'Electricity', 'Service', 'Discount', 'Net USD', 'Net BTC', 'Net sats', ...(withGmt ? ['≈ in GOMINING*'] : [])],
         Object.entries(r.periods).map(([key, p]) => [
           PERIOD_LABELS[key], usdSmart(p.grossUsd), `−${usdSmart(p.electricityUsd)}`, `−${usdSmart(p.serviceUsd)}`, p.discountUsd ? `+${usdSmart(p.discountUsd)}` : '—',
           usdSmart(p.netUsd), num(p.netBtc, 8), num(p.netSats), ...(withGmt ? [num(p.netGomining, 2)] : []),
         ]));
-      $('gc-note').textContent = `${v.powerTh} TH at ${v.efficiencyWth} W/TH, ${num(r.input.discountPct, 1)}% maintenance discount, ${basis}${sample}. Rates held constant; BTC price and difficulty will move.`;
+      $('gc-note').textContent = `${v.powerTh} TH at ${v.efficiencyWth} W/TH, ${num(r.input.discountPct, 1)}% total maintenance discount, electricity ${usd(r.input.kwhPriceUsd, 3)}/kWh, ${basis}${sample}. Rewards are paid in BTC${withGmt ? '; *GOMINING is only a conversion at today\'s market price' : ''}. Rates held constant; BTC price, difficulty and fees will move. Payback depends heavily on these assumptions.`;
     } else {
       const listedPerTh = listedPricePerTh(state.market.presets, v.efficiencyWth);
       const pricePerThUsd = v.pricePerThUsd ?? listedPerTh;
       if (!pricePerThUsd) throw new Error(`GoMining doesn't list miners at ${v.efficiencyWth} W/TH: enter a price per TH.`);
-      const plan = investmentPlan(income, { startTh: v.powerTh, efficiencyWth: v.efficiencyWth, monthlyUsd: v.monthlyUsd, months: v.months, pricePerThUsd, reinvest: v.reinvest, discountPct: v.discountPct });
+      const plan = investmentPlan(income, {
+        startTh: v.powerTh, efficiencyWth: v.efficiencyWth, monthlyUsd: v.monthlyUsd, months: v.months, pricePerThUsd, reinvest: v.reinvest, discountPct: v.discountPct,
+        reinvestPricePerThUsd: v.reinvestPricePerThUsd, reinvestBonusPct: v.reinvestBonusPct, kwhPriceUsd: v.kwhPriceUsd, useAverageReward: v.useAverageReward,
+      });
       const sum = plan.summary;
       $('gp-th').textContent = `${num(sum.finalTh, 1)} TH`;
       $('gp-th-sub').textContent = `Earning ${usdSmart(sum.monthlyIncomeUsdAtEnd)} a month by then`;
@@ -520,7 +531,10 @@ function renderCalculator() {
       });
       table($('gp-table'), ['Month', 'TH', 'Net this month', 'Total earned', 'Total invested'],
         plan.rows.map((row) => [row.month, num(row.th, 2), usd(row.netUsdMonth, 2), usd(row.earnedUsd, 2), usd(row.investedUsd, 2)]));
-      $('gc-note').textContent = `Buying at ${usd(pricePerThUsd, 2)} per TH${v.pricePerThUsd ? '' : ' (GoMining listed price)'}, ${v.efficiencyWth} W/TH, ${num(v.discountPct, 1)}% discount, ${basis}${sample}. A simulation at constant rates, not a forecast.`;
+      const reinvestNote = v.reinvest
+        ? ` Reinvesting at ${usd(v.reinvestPricePerThUsd || pricePerThUsd, 2)} per TH${v.reinvestPricePerThUsd ? '' : ' (same as new purchases: enter your power-upgrade price for accuracy)'}${v.reinvestBonusPct ? ` with a ${num(v.reinvestBonusPct, 1)}% bonus` : ''}; GoMining's reinvestment eligibility rules aren't checked.`
+        : '';
+      $('gc-note').textContent = `New purchases at ${usd(pricePerThUsd, 2)} per TH${v.pricePerThUsd ? '' : ' (GoMining new-miner list price)'}, ${v.efficiencyWth} W/TH, ${num(v.discountPct, 1)}% total maintenance discount, ${basis}${sample}.${reinvestNote} A simulation at constant rates, not a forecast.`;
     }
   } catch (error) {
     $('gc-note').textContent = error.message;
@@ -529,7 +543,7 @@ function renderCalculator() {
 
 $('gc-form').addEventListener('input', () => {
   clearTimeout(state.gcTimer);
-  state.gcTimer = setTimeout(renderCalculator, 120);
+  state.gcTimer = setTimeout(() => { renderCalculator(); renderAdvisor(); }, 120);
 });
 $('gc-form').addEventListener('submit', (event) => event.preventDefault());
 for (const button of $('gc-mode').children) button.addEventListener('click', () => setMode(button.dataset.mode));
@@ -644,7 +658,7 @@ $('mm-clear').addEventListener('click', () => {
 });
 
 // ---------- Share a calculation (Discord) ----------
-const SHARE_FIELDS = ['powerTh', 'efficiencyWth', 'discountPct', 'priceUsd', 'monthlyUsd', 'months', 'pricePerThUsd'];
+const SHARE_FIELDS = ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'priceUsd', 'monthlyUsd', 'months', 'pricePerThUsd', 'reinvestPricePerThUsd', 'reinvestBonusPct'];
 
 // Opening a shared link fills the calculator with the sender's numbers.
 function applySharedLink() {
@@ -664,8 +678,8 @@ function shareLink() {
   const f = $('gc-form').elements;
   const params = new URLSearchParams({ calc: state.gcMode });
   const fields = state.gcMode === 'plan'
-    ? ['powerTh', 'efficiencyWth', 'discountPct', 'monthlyUsd', 'months', 'pricePerThUsd']
-    : ['powerTh', 'efficiencyWth', 'discountPct', 'priceUsd'];
+    ? ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'monthlyUsd', 'months', 'pricePerThUsd', 'reinvestPricePerThUsd', 'reinvestBonusPct']
+    : ['powerTh', 'efficiencyWth', 'discountPct', 'kwhPriceUsd', 'priceUsd'];
   for (const name of fields) if (f[name].value !== '') params.set(name, f[name].value);
   if (state.gcMode === 'plan' && f.reinvest.checked) params.set('reinvest', '1');
   if (f.average.checked) params.set('average', '1');

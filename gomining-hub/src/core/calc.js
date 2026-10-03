@@ -165,8 +165,11 @@ export function minerRoi(market, presets) {
 
 // Is it worth upgrading efficiency? Each W/TH less saves one W/TH of electricity per TH per day;
 // compare that with what GoMining charges per TH for the step.
-export function upgradeAdvisor(market, upgrades) {
-  const savingUsdPerThDay = market.electricityUsdPerThPerWthDay;
+export function upgradeAdvisor(market, upgrades, { discountPct = 0, kwhPriceUsd } = {}) {
+  // A maintenance discount also discounts electricity, so a lower W/TH saves less than list.
+  const discount = Math.min(Math.max(Number(discountPct) || 0, 0), 100) / 100;
+  const electricity = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const savingUsdPerThDay = electricity * (1 - discount);
   return upgrades.efficiencyUpgradeSteps
     .filter((step) => step.toLevelWth >= EFFICIENCY_RANGE.min && step.toLevelWth < EFFICIENCY_RANGE.max)
     .map((step) => ({
@@ -199,13 +202,15 @@ const PERIODS = [['day', 1], ['week', 7], ['month', DAYS_PER_MONTH], ['year', 36
 // Rewards for a miner over a day, week, month and year. `discountPct` is the owner's maintenance
 // discount (VIP level, paying fees in GOMINING), applied to electricity and service together.
 // `gominingUsd` (optional) adds the net in GOMINING tokens.
-export function rewardsBreakdown(market, { powerTh, efficiencyWth, discountPct = 0, priceUsd, gominingUsd, useAverageReward = false }) {
+// `kwhPriceUsd` optionally replaces GoMining's published electricity rate.
+export function rewardsBreakdown(market, { powerTh, efficiencyWth, discountPct = 0, priceUsd, gominingUsd, useAverageReward = false, kwhPriceUsd }) {
   if (!(powerTh > 0)) throw new Error('powerTh must be greater than 0');
   if (!(efficiencyWth > 0)) throw new Error('efficiencyWth must be greater than 0');
   const discount = Math.min(Math.max(Number(discountPct) || 0, 0), 100) / 100;
   const rewardPerTh = useAverageReward && market.averageRewardUsdPerThDay365 !== null ? market.averageRewardUsdPerThDay365 : market.rewardUsdPerThDay;
   const grossUsd = rewardPerTh * powerTh;
-  const electricityUsd = market.electricityUsdPerThPerWthDay * efficiencyWth * powerTh;
+  const electricityPerThPerWth = kwhPriceUsd > 0 ? (kwhPriceUsd * 24) / 1000 : market.electricityUsdPerThPerWthDay;
+  const electricityUsd = electricityPerThPerWth * efficiencyWth * powerTh;
   const serviceUsd = market.serviceUsdPerThDay * powerTh;
   const discountUsd = (electricityUsd + serviceUsd) * discount;
   const netUsd = grossUsd - electricityUsd - serviceUsd + discountUsd;
@@ -227,7 +232,11 @@ export function rewardsBreakdown(market, { powerTh, efficiencyWth, discountPct =
     days: netUsd > 0 ? Math.ceil(priceUsd / netUsd) : null,
     annualReturnPct: round(((netUsd * 365) / priceUsd) * 100, 2),
   } : null;
-  return { input: { powerTh, efficiencyWth, discountPct: discount * 100, rewardBasis: rewardPerTh === market.rewardUsdPerThDay ? 'today' : '365-day average' }, periods, payback };
+  return {
+    input: { powerTh, efficiencyWth, discountPct: discount * 100, kwhPriceUsd: round((electricityPerThPerWth * 1000) / 24, 6), rewardBasis: rewardPerTh === market.rewardUsdPerThDay ? 'today' : '365-day average' },
+    periods,
+    payback,
+  };
 }
 
 // Listed price per TH for an efficiency: the 1 TH miner if GoMining sells one, else the cheapest per TH.
@@ -239,11 +248,19 @@ export function listedPricePerTh(presets, efficiencyWth) {
 
 // Month-by-month simulation of buying hashrate at a fixed price per TH, at today's rates.
 // With `reinvest`, each month's net reward also buys TH. Returns monthly rows and a summary.
-export function investmentPlan(market, { startTh = 0, efficiencyWth, monthlyUsd = 0, months = 12, pricePerThUsd, reinvest = false, discountPct = 0 }) {
+// `reinvestPricePerThUsd` is what reinvested rewards pay per TH (e.g. GoMining's power-upgrade price,
+// defaults to pricePerThUsd) and `reinvestBonusPct` adds bonus TH on reinvestment (e.g. a VIP bonus).
+// GoMining's eligibility rules and minimums for reinvesting are not modelled.
+export function investmentPlan(market, {
+  startTh = 0, efficiencyWth, monthlyUsd = 0, months = 12, pricePerThUsd, reinvest = false, discountPct = 0,
+  reinvestPricePerThUsd, reinvestBonusPct = 0, kwhPriceUsd, useAverageReward = false,
+}) {
   if (!(efficiencyWth > 0)) throw new Error('efficiencyWth must be greater than 0');
   if (!(pricePerThUsd > 0)) throw new Error('pricePerThUsd must be greater than 0');
   const span = Math.min(Math.max(Math.round(months), 1), 120);
-  const perThMonth = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct }).periods.month.netUsd;
+  const reinvestPrice = reinvestPricePerThUsd > 0 ? reinvestPricePerThUsd : pricePerThUsd;
+  const bonus = 1 + Math.min(Math.max(Number(reinvestBonusPct) || 0, 0), 100) / 100;
+  const perThMonth = rewardsBreakdown(market, { powerTh: 1, efficiencyWth, discountPct, kwhPriceUsd, useAverageReward }).periods.month.netUsd;
   let th = Math.max(Number(startTh) || 0, 0);
   let invested = th * pricePerThUsd;
   let earnedUsd = 0;
@@ -256,7 +273,7 @@ export function investmentPlan(market, { startTh = 0, efficiencyWth, monthlyUsd 
     const netUsd = th * perThMonth;
     earnedUsd += netUsd;
     if (reinvest && netUsd > 0) {
-      th += netUsd / pricePerThUsd;
+      th += (netUsd / reinvestPrice) * bonus;
       reinvestedUsd += netUsd;
     }
     if (breakEvenMonth === null && invested > 0 && earnedUsd >= invested) breakEvenMonth = month;
