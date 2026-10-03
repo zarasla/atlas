@@ -177,11 +177,9 @@
         <form id="db-form" class="db-grid" autocomplete="off">
           <label class="field"><span>GOMINING held (wallet + locked)</span><input name="gominingHeld" type="number" min="0" step="any" value="0" inputmode="decimal"></label>
           <label class="field"><span>VIP level</span><select name="vipLevel" id="db-vip"></select></label>
+          <button class="btn db-apply" type="button" id="db-apply">Use this discount</button>
           <label class="check"><input name="serviceButton" type="checkbox"> I use the Service Button (3%)</label>
-          <div class="db-result">
-            <div class="db-out" id="db-out" aria-live="polite"></div>
-            <button class="btn db-apply" type="button" id="db-apply">Use this discount</button>
-          </div>
+          <div class="db-out" id="db-out" aria-live="polite"></div>
         </form>
         <p class="fine">Uses the power and efficiency above. Paying in GOMINING gives 1% for every 18 days of maintenance your GOMINING balance (wallet plus locked) covers, up to 20% at 360 days. VIP goes from 0% (Bronze I) to 6% (Elite), and from Silver I it also adds +5% TH when reinvesting (+10% from Diamond I). The three add up, to 29% at most.</p>
       </details>
