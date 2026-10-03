@@ -374,24 +374,29 @@ tr.highlight td { background: rgba(247, 181, 0, 0.07); }
 @media (max-width: 900px) { .outlook { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- Discount builder ---------- */
-.gc-builder { margin-top: 14px; border: 1px solid rgba(247, 181, 0, 0.55); border-radius: 12px; padding: 12px 16px; background: linear-gradient(90deg, rgba(247, 181, 0, 0.14), rgba(247, 181, 0, 0.04) 60%, var(--surface-2)); box-shadow: 0 0 18px rgba(247, 181, 0, 0.18); }
-.gc-builder:hover { box-shadow: 0 0 24px rgba(247, 181, 0, 0.3); }
+/* GoMining's own accents (the green and purple of its app icons) mark the discount builder. */
+.gc-builder { --gm-green: #1fd17f; --gm-purple: #7c5cff; margin-top: 14px; border: 1px solid rgba(124, 92, 255, 0.6); border-radius: 12px; padding: 12px 16px; background: linear-gradient(100deg, rgba(31, 209, 127, 0.12), rgba(124, 92, 255, 0.14) 55%, var(--surface-2)); box-shadow: 0 0 18px rgba(124, 92, 255, 0.22); }
+.gc-builder:hover { box-shadow: 0 0 26px rgba(124, 92, 255, 0.35); }
 .gc-builder summary { cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; list-style: none; color: var(--ink); }
 .gc-builder summary::-webkit-details-marker { display: none; }
-.gc-builder summary::after { content: "▸"; margin-left: auto; color: var(--gold); font-size: 18px; transition: transform 0.2s; }
+.gc-builder summary::after { content: "▸"; margin-left: auto; color: var(--gm-green); font-size: 18px; transition: transform 0.2s; }
 .gc-builder[open] summary::after { transform: rotate(90deg); }
-.db-icon { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #1a1100; font-weight: 800; font-size: 14px; }
-.db-title { font-family: var(--display); font-size: 17px; letter-spacing: 0.03em; color: var(--gold); }
+.db-icon { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--gm-green), var(--gm-purple)); color: #fff; font-weight: 800; font-size: 14px; }
+.db-title { font-family: var(--display); font-size: 17px; letter-spacing: 0.03em; background: linear-gradient(90deg, var(--gm-green), #a58bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .db-desc { font-size: 13px; color: var(--ink-2); }
-.db-badge { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; background: var(--gold); color: #1a1100; }
-@media (max-width: 560px) { .db-desc { flex-basis: 100%; order: 5; } }
+.db-badge { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; background: var(--gm-green); color: #03140a; }
+.gc-builder .db-out .db-total { color: var(--gm-green); }
+.db-result { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+.db-apply { align-self: start; margin-top: 2px; padding: 0 22px; background: linear-gradient(135deg, var(--gm-purple), #5a3fe0); color: #fff; box-shadow: 0 0 14px rgba(124, 92, 255, 0.5); }
+.db-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 560px) { .db-desc { flex-basis: 100%; order: 5; } .db-result { grid-template-columns: minmax(0, 1fr); } .db-apply { width: 100%; } }
 .db-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; margin-top: 12px; }
-.db-out { grid-column: 1 / 3; font-size: 14px; color: var(--ink-2); display: grid; gap: 4px; }
+.db-out { font-size: 14px; color: var(--ink-2); display: grid; gap: 4px; }
 .db-out b { color: var(--ink); }
 .db-out .db-total { font-family: var(--display); font-size: 26px; color: var(--gold); }
 .gc-fees { font-size: 13.5px; color: var(--ink-2); margin: 4px 0 0; }
 .gc-fees b { color: var(--ink); }
-@media (max-width: 760px) { .db-grid { grid-template-columns: minmax(0, 1fr); } .db-out { grid-column: auto; } }
+@media (max-width: 760px) { .db-grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- Miner Wars ---------- */
 .mw-clock { font-size: 13px; color: var(--ink-2); text-align: right; }
@@ -440,3 +445,4 @@ html { scroll-behavior: smooth; }
 .vip-next strong { color: var(--ink); }
 .se-head { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 @media (max-width: 560px) { .vip-form, .se-form, .se-head { grid-template-columns: minmax(0, 1fr); } .group-title h2 { font-size: 19px; } }
+.gc-builder .fine { margin-top: 10px; }
