@@ -1,7 +1,6 @@
 import { columnChart, lineChart, splitBar } from './charts.js';
 import { SIMPLE_EARN_ASSETS, SIMPLE_EARN_RULES, VIP_LEVELS, GOMINING_REINVEST_FEE_PCT, TH_REINVEST_RULES, atBtcPrice, simpleEarn, vipStatus, findListedPrice, investmentPlan, listedPricePerTh, maintenanceDiscount, portfolio, rewardsBreakdown, upgradeAdvisor } from '/lib/calc.js';
 import { $, PERIOD_LABELS, SERIES, bold, compact, day, el, empty, getJson, legendInto, num, pct, sats, setDelta, staleNote, store, table, tick, time, usd, usdSmart } from './ui.js';
-import { initMinerWars, refreshMinerWars } from './minerwars.js';
 import { initPlanning, renderPlanning } from './planning.js';
 import { initToken, renderToken } from './token.js';
 import { initPlatform } from './platform.js';
@@ -599,7 +598,6 @@ function renderAll() {
   renderHistory();
   renderPlanning();
   renderToken();
-  refreshMinerWars();
 }
 
 // ---------- Goose Calculator ----------
@@ -1048,7 +1046,6 @@ markCurrent();
 applySharedLink();
 setMode(state.gcMode);
 initPlanning(shared);
-initMinerWars(shared);
 initToken(shared);
 initPlatform(shared);
 load();
